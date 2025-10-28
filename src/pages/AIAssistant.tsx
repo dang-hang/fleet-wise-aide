@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -480,13 +481,17 @@ const AIAssistant = () => {
                           className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
-                            className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                            className={`max-w-[80%] rounded-lg px-4 py-3 ${
                               message.role === 'user'
                                 ? 'bg-primary text-primary-foreground'
                                 : 'bg-card border'
                             }`}
                           >
-                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                            {message.role === 'user' ? (
+                              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                            ) : (
+                              <MarkdownRenderer content={message.content} />
+                            )}
                           </div>
                         </div>
                       ))}
