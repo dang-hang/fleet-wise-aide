@@ -6,7 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, FileText, Calendar, Loader2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Search, FileText, Calendar, Loader2, Trash2, Save } from "lucide-react";
 
 interface CaseType {
   id: string;
@@ -20,14 +25,18 @@ interface CaseType {
   vehicle_model: string;
   problem_description: string;
   diagnostic_result: string | null;
+  notes: string | null;
 }
 
 const CaseHistory = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [cases, setCases] = useState<CaseType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCase, setSelectedCase] = useState<CaseType | null>(null);
+  const [notes, setNotes] = useState("");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -59,6 +68,72 @@ const CaseHistory = () => {
     }
   };
 
+  const handleDeleteCase = async (caseId: string) => {
+    try {
+      const { error } = await supabase
+        .from('cases')
+        .delete()
+        .eq('id', caseId);
+
+      if (error) throw error;
+
+      setCases(cases.filter(c => c.id !== caseId));
+      setSelectedCase(null);
+      
+      toast({
+        title: "Success",
+        description: "Case deleted successfully",
+      });
+    } catch (error) {
+      console.error('Error deleting case:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete case",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    if (!selectedCase) return;
+
+    setIsSavingNotes(true);
+    try {
+      const { error } = await supabase
+        .from('cases')
+        .update({ notes })
+        .eq('id', selectedCase.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setCases(cases.map(c => 
+        c.id === selectedCase.id ? { ...c, notes } : c
+      ));
+      setSelectedCase({ ...selectedCase, notes });
+
+      toast({
+        title: "Success",
+        description: "Notes saved successfully",
+      });
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save notes",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedCase) {
+      setNotes(selectedCase.notes || "");
+    }
+  }, [selectedCase]);
+
   const filteredCases = cases.filter(caseItem => 
     caseItem.case_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
     caseItem.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -67,15 +142,24 @@ const CaseHistory = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Resolved":
+      case "Completed":
         return "bg-green-500/10 text-green-700 border-green-500/20";
       case "In Progress":
+        return "bg-blue-500/10 text-blue-700 border-blue-500/20";
+      case "On Hold":
         return "bg-yellow-500/10 text-yellow-700 border-yellow-500/20";
       case "Pending":
-        return "bg-blue-500/10 text-blue-700 border-blue-500/20";
+        return "bg-gray-500/10 text-gray-700 border-gray-500/20";
       default:
         return "";
     }
+  };
+
+  const groupedCases = {
+    'Pending': filteredCases.filter(c => c.status === 'Pending'),
+    'In Progress': filteredCases.filter(c => c.status === 'In Progress'),
+    'On Hold': filteredCases.filter(c => c.status === 'On Hold'),
+    'Completed': filteredCases.filter(c => c.status === 'Completed'),
   };
 
   if (selectedCase) {
@@ -84,12 +168,36 @@ const CaseHistory = () => {
         <Navbar />
         
         <main className="container mx-auto px-4 py-8">
-          <div className="mb-6">
-            <Button variant="ghost" onClick={() => setSelectedCase(null)} className="mb-4">
-              ← Back to Case History
-            </Button>
-            <h1 className="text-3xl font-bold text-primary mb-2">Case Details</h1>
-            <p className="text-muted-foreground">{selectedCase.case_number}</p>
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <Button variant="ghost" onClick={() => setSelectedCase(null)} className="mb-4">
+                ← Back to Case History
+              </Button>
+              <h1 className="text-3xl font-bold text-primary mb-2">Case Details</h1>
+              <p className="text-muted-foreground">{selectedCase.case_number}</p>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Case
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this case. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleDeleteCase(selectedCase.id)}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
 
           <div className="max-w-4xl mx-auto space-y-6">
@@ -123,6 +231,38 @@ const CaseHistory = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap">{selectedCase.problem_description}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Mechanic Notes</CardTitle>
+                <CardDescription>Add or update notes about this case</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    placeholder="Add notes about repairs, parts needed, progress updates..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="min-h-[150px]"
+                  />
+                </div>
+                <Button onClick={handleSaveNotes} disabled={isSavingNotes}>
+                  {isSavingNotes ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Notes
+                    </>
+                  )}
+                </Button>
               </CardContent>
             </Card>
 
@@ -180,43 +320,93 @@ const CaseHistory = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {filteredCases.map((caseItem) => (
-              <Card key={caseItem.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2">
-                        <CardTitle>{caseItem.title}</CardTitle>
-                        <Badge variant="outline" className={getStatusColor(caseItem.status)}>
-                          {caseItem.status}
-                        </Badge>
-                      </div>
-                      <CardDescription className="flex items-center gap-4">
-                        <span className="flex items-center gap-1">
-                          <FileText className="h-3 w-3" />
-                          {caseItem.case_number}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(caseItem.created_at).toLocaleDateString()}
-                        </span>
-                      </CardDescription>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setSelectedCase(caseItem)}>
-                      View Details
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-2">
-                    {caseItem.category && <Badge variant="secondary">{caseItem.category}</Badge>}
-                    <Badge variant="outline">{`${caseItem.vehicle_year} ${caseItem.vehicle_make} ${caseItem.vehicle_model}`}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
+          <Tabs defaultValue="Pending" className="space-y-4">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="Pending">
+                Pending ({groupedCases['Pending'].length})
+              </TabsTrigger>
+              <TabsTrigger value="In Progress">
+                In Progress ({groupedCases['In Progress'].length})
+              </TabsTrigger>
+              <TabsTrigger value="On Hold">
+                On Hold ({groupedCases['On Hold'].length})
+              </TabsTrigger>
+              <TabsTrigger value="Completed">
+                Completed ({groupedCases['Completed'].length})
+              </TabsTrigger>
+            </TabsList>
+
+            {Object.entries(groupedCases).map(([status, statusCases]) => (
+              <TabsContent key={status} value={status} className="space-y-4">
+                {statusCases.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      No cases with status: {status}
+                    </CardContent>
+                  </Card>
+                ) : (
+                  statusCases.map((caseItem) => (
+                    <Card key={caseItem.id} className="hover:shadow-lg transition-shadow">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center gap-2">
+                              <CardTitle>{caseItem.title}</CardTitle>
+                              <Badge variant="outline" className={getStatusColor(caseItem.status)}>
+                                {caseItem.status}
+                              </Badge>
+                            </div>
+                            <CardDescription className="flex items-center gap-4">
+                              <span className="flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                {caseItem.case_number}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(caseItem.created_at).toLocaleDateString()}
+                              </span>
+                            </CardDescription>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setSelectedCase(caseItem)}>
+                              View Details
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete case {caseItem.case_number}. This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteCase(caseItem.id)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex gap-2">
+                          {caseItem.category && <Badge variant="secondary">{caseItem.category}</Badge>}
+                          <Badge variant="outline">{`${caseItem.vehicle_year} ${caseItem.vehicle_make} ${caseItem.vehicle_model}`}</Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </TabsContent>
             ))}
-          </div>
+          </Tabs>
         )}
       </main>
     </div>

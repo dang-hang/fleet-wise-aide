@@ -21,6 +21,7 @@ export type Database = {
           created_at: string
           diagnostic_result: string | null
           id: string
+          notes: string | null
           problem_description: string
           status: string
           title: string
@@ -36,6 +37,7 @@ export type Database = {
           created_at?: string
           diagnostic_result?: string | null
           id?: string
+          notes?: string | null
           problem_description: string
           status?: string
           title: string
@@ -51,6 +53,7 @@ export type Database = {
           created_at?: string
           diagnostic_result?: string | null
           id?: string
+          notes?: string | null
           problem_description?: string
           status?: string
           title?: string
