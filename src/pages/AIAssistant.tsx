@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send } from "lucide-react";
 
@@ -22,6 +24,7 @@ const AIAssistant = () => {
   const [showResults, setShowResults] = useState(false);
   const [savedCaseNumber, setSavedCaseNumber] = useState("");
   const [savedCaseId, setSavedCaseId] = useState("");
+  const [caseStatus, setCaseStatus] = useState("In Progress");
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant', content: string }>>([]);
   const [currentMessage, setCurrentMessage] = useState("");
 
@@ -294,6 +297,45 @@ const AIAssistant = () => {
     }
   };
 
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('cases')
+        .update({ status: newStatus })
+        .eq('id', savedCaseId);
+
+      if (error) throw error;
+
+      setCaseStatus(newStatus);
+      toast({
+        title: "Status Updated",
+        description: `Case status changed to ${newStatus}`,
+      });
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update case status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Completed':
+        return 'bg-green-500';
+      case 'In Progress':
+        return 'bg-blue-500';
+      case 'On Hold':
+        return 'bg-yellow-500';
+      case 'Pending':
+        return 'bg-gray-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-secondary/30">
       <Navbar />
@@ -381,7 +423,10 @@ const AIAssistant = () => {
           <>
             <div className="mb-6">
               <h1 className="text-3xl font-bold text-primary mb-2">AI Diagnostic Results</h1>
-              <p className="text-muted-foreground">Case Number: {savedCaseNumber}</p>
+              <div className="flex items-center gap-4">
+                <p className="text-muted-foreground">Case Number: {savedCaseNumber}</p>
+                <Badge className={getStatusColor(caseStatus)}>{caseStatus}</Badge>
+              </div>
             </div>
 
             <div className="max-w-4xl mx-auto space-y-6">
@@ -390,7 +435,7 @@ const AIAssistant = () => {
                   <CardTitle>Vehicle Information</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div className="grid grid-cols-3 gap-4 text-sm mb-4">
                     <div>
                       <p className="text-muted-foreground">Year</p>
                       <p className="font-medium">{vehicleYear}</p>
@@ -403,6 +448,20 @@ const AIAssistant = () => {
                       <p className="text-muted-foreground">Model</p>
                       <p className="font-medium">{vehicleModel}</p>
                     </div>
+                  </div>
+                  <div className="space-y-2 pt-4 border-t">
+                    <Label htmlFor="status">Case Status</Label>
+                    <Select value={caseStatus} onValueChange={handleStatusChange}>
+                      <SelectTrigger id="status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Pending">Pending</SelectItem>
+                        <SelectItem value="In Progress">In Progress</SelectItem>
+                        <SelectItem value="On Hold">On Hold</SelectItem>
+                        <SelectItem value="Completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </CardContent>
               </Card>
