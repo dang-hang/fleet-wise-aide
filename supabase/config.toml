@@ -1,1 +1,4 @@
 project_id = "rturhpxizpendhaszplw"
+
+[functions.maintenance-ai]
+verify_jwt = false
