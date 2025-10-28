@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +19,45 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Extract vehicle information from the first user message
+    let vehicleContext = "";
+    const firstMessage = messages.find((m: any) => m.role === "user")?.content || "";
+    
+    // Try to extract vehicle make/model from the message
+    const vehicleMatch = firstMessage.match(/Vehicle:\s*(\d+)\s+([A-Za-z]+)\s+([A-Za-z\s]+)/);
+    
+    if (vehicleMatch) {
+      const [, year, make, model] = vehicleMatch;
+      console.log(`Searching for manuals: ${make} ${model}`);
+      
+      // Query relevant manuals from the database
+      const { data: manuals, error } = await supabase
+        .from("manuals")
+        .select("*")
+        .or(`vehicle_type.ilike.%${make}%,vehicle_model.ilike.%${model}%`)
+        .limit(5);
+
+      if (!error && manuals && manuals.length > 0) {
+        vehicleContext = "\n\nRELEVANT REPAIR MANUALS IN DATABASE:\n";
+        for (const manual of manuals) {
+          vehicleContext += `- ${manual.title} (${manual.vehicle_type}${manual.vehicle_model ? ' - ' + manual.vehicle_model : ''})`;
+          if (manual.year_range) {
+            vehicleContext += ` [Years: ${manual.year_range}]`;
+          }
+          vehicleContext += "\n";
+        }
+        vehicleContext += "\nYou have access to these repair manuals in the system. Reference them when providing diagnostic information and repair instructions.\n";
+        console.log("Found manuals:", manuals.length);
+      } else {
+        console.log("No manuals found or error:", error);
+      }
+    }
+
     const systemPrompt = `You are an expert vehicle maintenance assistant for the PASCO Sheriff Office fleet. You specialize in:
 - Diagnosing vehicle issues
 - Providing step-by-step repair instructions
@@ -25,7 +65,7 @@ serve(async (req) => {
 - Recommending preventive maintenance schedules
 - Safety protocols for fleet vehicles
 - Common issues with police vehicles (Crown Victoria, Tahoe, Charger, F-150, Silverado, Explorer)
-
+${vehicleContext}
 Always provide clear, actionable guidance. When discussing repairs, include:
 1. Safety precautions
 2. Required tools
@@ -33,6 +73,7 @@ Always provide clear, actionable guidance. When discussing repairs, include:
 4. Common mistakes to avoid
 5. Expected time to complete
 
+If relevant repair manuals are available in the database, mention them and reference their content in your responses.
 Be concise but thorough. If you need more information to provide accurate guidance, ask specific questions.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

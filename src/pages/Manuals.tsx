@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { BookOpen, Search, Upload, FileText, Download, Trash2 } from "lucide-react";
+import { BookOpen, Search, Upload, FileText, Download, Trash2, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { DocumentViewer } from "@/components/DocumentViewer";
 
 const uploadSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
@@ -38,6 +39,7 @@ const Manuals = () => {
   const [uploading, setUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewingManual, setViewingManual] = useState<Manual | null>(null);
   
   // Form state
   const [title, setTitle] = useState("");
@@ -407,6 +409,14 @@ const Manuals = () => {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <Button 
+                    variant="default" 
+                    className="w-full" 
+                    onClick={() => setViewingManual(manual)}
+                  >
+                    <Eye className="mr-2 h-4 w-4" />
+                    View
+                  </Button>
+                  <Button 
                     variant="outline" 
                     className="w-full" 
                     onClick={() => handleDownload(manual)}
@@ -428,6 +438,16 @@ const Manuals = () => {
           </div>
         )}
       </main>
+
+      {viewingManual && (
+        <DocumentViewer
+          filePath={viewingManual.file_path}
+          fileName={viewingManual.title}
+          fileType={viewingManual.file_type}
+          isOpen={!!viewingManual}
+          onClose={() => setViewingManual(null)}
+        />
+      )}
     </div>
   );
 };
