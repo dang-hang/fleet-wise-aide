@@ -64,8 +64,9 @@ export const DocumentViewer = ({ filePath, fileName, fileType, isOpen, onClose }
 
     if (fileType === "application/pdf") {
       return (
-        <iframe
+        <embed
           src={fileUrl}
+          type="application/pdf"
           className="w-full h-[80vh] border-0"
           title={fileName}
         />
