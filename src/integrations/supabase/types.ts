@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      cases: {
+        Row: {
+          case_number: string
+          category: string | null
+          created_at: string
+          diagnostic_result: string | null
+          id: string
+          problem_description: string
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+          vehicle_make: string
+          vehicle_model: string
+          vehicle_year: string
+        }
+        Insert: {
+          case_number: string
+          category?: string | null
+          created_at?: string
+          diagnostic_result?: string | null
+          id?: string
+          problem_description: string
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+          vehicle_make: string
+          vehicle_model: string
+          vehicle_year: string
+        }
+        Update: {
+          case_number?: string
+          category?: string | null
+          created_at?: string
+          diagnostic_result?: string | null
+          id?: string
+          problem_description?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+          vehicle_make?: string
+          vehicle_model?: string
+          vehicle_year?: string
+        }
+        Relationships: []
+      }
       manuals: {
         Row: {
           created_at: string
@@ -61,7 +109,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_case_number: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never

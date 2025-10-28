@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
@@ -6,10 +6,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, FileText, Calendar } from "lucide-react";
+import { Search, FileText, Calendar, Loader2 } from "lucide-react";
+
+interface CaseType {
+  id: string;
+  case_number: string;
+  title: string;
+  category: string | null;
+  created_at: string;
+  status: string;
+  vehicle_year: string;
+  vehicle_make: string;
+  vehicle_model: string;
+}
 
 const CaseHistory = () => {
   const navigate = useNavigate();
+  const [cases, setCases] = useState<CaseType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -21,48 +36,31 @@ const CaseHistory = () => {
     checkAuth();
   }, [navigate]);
 
-  const cases = [
-    {
-      id: "CASE-001",
-      title: "Engine Oil Leak - Unit 42",
-      category: "Engine Issue",
-      date: "2025-10-25",
-      status: "Resolved",
-      vehicle: "Ford Crown Victoria"
-    },
-    {
-      id: "CASE-002",
-      title: "Brake System Check - Unit 18",
-      category: "Routine Maintenance",
-      date: "2025-10-24",
-      status: "In Progress",
-      vehicle: "Chevrolet Tahoe"
-    },
-    {
-      id: "CASE-003",
-      title: "Electrical Fault - Unit 31",
-      category: "Electrical",
-      date: "2025-10-23",
-      status: "Resolved",
-      vehicle: "Dodge Charger"
-    },
-    {
-      id: "CASE-004",
-      title: "Transmission Service - Unit 09",
-      category: "Routine Maintenance",
-      date: "2025-10-22",
-      status: "Resolved",
-      vehicle: "Ford F-150"
-    },
-    {
-      id: "CASE-005",
-      title: "AC System Repair - Unit 27",
-      category: "HVAC",
-      date: "2025-10-21",
-      status: "Pending",
-      vehicle: "Chevrolet Silverado"
+  useEffect(() => {
+    fetchCases();
+  }, []);
+
+  const fetchCases = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('cases')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCases(data || []);
+    } catch (error) {
+      console.error('Error fetching cases:', error);
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
+
+  const filteredCases = cases.filter(caseItem => 
+    caseItem.case_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    caseItem.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    `${caseItem.vehicle_year} ${caseItem.vehicle_make} ${caseItem.vehicle_model}`.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -94,46 +92,60 @@ const CaseHistory = () => {
               <Input
                 placeholder="Search cases by ID, vehicle, or keyword..."
                 className="pl-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
-          {cases.map((caseItem) => (
-            <Card key={caseItem.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center gap-2">
-                      <CardTitle>{caseItem.title}</CardTitle>
-                      <Badge variant="outline" className={getStatusColor(caseItem.status)}>
-                        {caseItem.status}
-                      </Badge>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : filteredCases.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              {searchQuery ? 'No cases found matching your search' : 'No cases yet. Create your first diagnostic case!'}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {filteredCases.map((caseItem) => (
+              <Card key={caseItem.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <CardTitle>{caseItem.title}</CardTitle>
+                        <Badge variant="outline" className={getStatusColor(caseItem.status)}>
+                          {caseItem.status}
+                        </Badge>
+                      </div>
+                      <CardDescription className="flex items-center gap-4">
+                        <span className="flex items-center gap-1">
+                          <FileText className="h-3 w-3" />
+                          {caseItem.case_number}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(caseItem.created_at).toLocaleDateString()}
+                        </span>
+                      </CardDescription>
                     </div>
-                    <CardDescription className="flex items-center gap-4">
-                      <span className="flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
-                        {caseItem.id}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(caseItem.date).toLocaleDateString()}
-                      </span>
-                    </CardDescription>
+                    <Button variant="outline" size="sm">View Details</Button>
                   </div>
-                  <Button variant="outline" size="sm">View Details</Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <Badge variant="secondary">{caseItem.category}</Badge>
-                  <Badge variant="outline">{caseItem.vehicle}</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-2">
+                    {caseItem.category && <Badge variant="secondary">{caseItem.category}</Badge>}
+                    <Badge variant="outline">{`${caseItem.vehicle_year} ${caseItem.vehicle_make} ${caseItem.vehicle_model}`}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );

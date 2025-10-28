@@ -1,32 +1,40 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Navbar } from "@/components/Navbar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Send, User } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
+import { Loader2 } from "lucide-react";
 
 const AIAssistant = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const scrollRef = useRef<HTMLDivElement>(null);
   
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "Hello! I'm your AI maintenance assistant. I can help you with vehicle diagnostics, repair procedures, and maintenance questions. How can I assist you today?"
-    }
-  ]);
-  const [input, setInput] = useState("");
+  const [vehicleYear, setVehicleYear] = useState("");
+  const [vehicleMake, setVehicleMake] = useState("");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [problemDescription, setProblemDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 30 }, (_, i) => (currentYear - i).toString());
+  
+  const makes = ["Ford", "Chevrolet", "Dodge", "Toyota", "Honda", "Nissan", "GMC", "Ram"];
+  
+  const models: Record<string, string[]> = {
+    Ford: ["Crown Victoria", "F-150", "Explorer", "Expedition", "Taurus"],
+    Chevrolet: ["Tahoe", "Silverado", "Impala", "Suburban", "Malibu"],
+    Dodge: ["Charger", "Durango", "Ram 1500", "Grand Caravan"],
+    Toyota: ["Camry", "Corolla", "Highlander", "Tundra", "4Runner"],
+    Honda: ["Accord", "Civic", "CR-V", "Pilot", "Odyssey"],
+    Nissan: ["Altima", "Maxima", "Pathfinder", "Titan", "Rogue"],
+    GMC: ["Sierra", "Yukon", "Terrain", "Acadia"],
+    Ram: ["1500", "2500", "3500", "ProMaster"]
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -38,146 +46,138 @@ const AIAssistant = () => {
     checkAuth();
   }, [navigate]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  const handleContinue = async () => {
+    if (!vehicleYear || !vehicleMake || !vehicleModel || !problemDescription.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all fields before continuing",
+        variant: "destructive",
+      });
+      return;
     }
-  }, [messages]);
 
-  const streamChat = async (userMessages: Message[]) => {
-    const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maintenance-ai`;
+    setIsLoading(true);
 
     try {
-      const response = await fetch(CHAT_URL, {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+
+      // Get diagnostic from AI
+      const prompt = `Vehicle: ${vehicleYear} ${vehicleMake} ${vehicleModel}\nProblem: ${problemDescription}`;
+      
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maintenance-ai`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: userMessages }),
+        body: JSON.stringify({ 
+          messages: [{ role: "user", content: prompt }]
+        }),
       });
 
       if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error("Rate limit exceeded. Please try again later.");
-        }
-        if (response.status === 402) {
-          throw new Error("AI credits exhausted. Please contact administrator.");
-        }
-        throw new Error("Failed to get AI response");
+        throw new Error("Failed to get diagnostic");
       }
 
-      if (!response.body) {
-        throw new Error("No response body");
-      }
-
-      const reader = response.body.getReader();
+      const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
-      let assistantContent = "";
+      let diagnosticResult = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        
-        let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
 
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr === "[DONE]") continue;
 
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            
-            if (content) {
-              assistantContent += content;
-              setMessages(prev => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg?.role === "assistant") {
-                  return prev.map((m, i) =>
-                    i === prev.length - 1 ? { ...m, content: assistantContent } : m
-                  );
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  diagnosticResult += content;
                 }
-                return [...prev, { role: "assistant", content: assistantContent }];
-              });
+              } catch (e) {
+                // Ignore parsing errors
+              }
             }
-          } catch (e) {
-            // Partial JSON, will be completed in next chunk
-            buffer = line + "\n" + buffer;
-            break;
           }
         }
       }
 
-      // Final flush
-      if (buffer.trim()) {
-        const lines = buffer.split("\n");
-        for (let line of lines) {
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
+      // Generate case number
+      const { data: caseNumberData } = await supabase
+        .rpc('generate_case_number');
+      
+      const caseNumber = caseNumberData || `CASE-${Date.now()}`;
 
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
+      // Determine category based on problem description
+      const category = determineCategoryFromProblem(problemDescription);
 
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setMessages(prev => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg?.role === "assistant") {
-                  return prev.map((m, i) =>
-                    i === prev.length - 1 ? { ...m, content: assistantContent } : m
-                  );
-                }
-                return [...prev, { role: "assistant", content: assistantContent }];
-              });
-            }
-          } catch {
-            // Ignore parsing errors in final flush
-          }
-        }
+      // Save to database
+      const { error: insertError } = await supabase
+        .from('cases')
+        .insert({
+          user_id: user.id,
+          case_number: caseNumber,
+          title: `${problemDescription.substring(0, 50)}${problemDescription.length > 50 ? '...' : ''}`,
+          vehicle_year: vehicleYear,
+          vehicle_make: vehicleMake,
+          vehicle_model: vehicleModel,
+          problem_description: problemDescription,
+          diagnostic_result: diagnosticResult,
+          category: category,
+          status: 'In Progress'
+        });
+
+      if (insertError) {
+        throw insertError;
       }
+
+      toast({
+        title: "Success",
+        description: "Diagnostic case created successfully",
+      });
+
+      navigate("/case-history");
     } catch (error) {
-      throw error;
+      console.error("Error creating case:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create diagnostic case",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = { role: "user", content: input.trim() };
-    const updatedMessages = [...messages, userMessage];
+  const determineCategoryFromProblem = (problem: string): string => {
+    const lowerProblem = problem.toLowerCase();
     
-    setMessages(updatedMessages);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      await streamChat(updatedMessages);
-    } catch (error) {
-      console.error("Chat error:", error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to get AI response",
-        variant: "destructive",
-      });
-      
-      // Remove the user message if there was an error
-      setMessages(messages);
-    } finally {
-      setIsLoading(false);
+    if (lowerProblem.includes('engine') || lowerProblem.includes('oil') || lowerProblem.includes('cooling')) {
+      return 'Engine Issue';
+    } else if (lowerProblem.includes('brake') || lowerProblem.includes('braking')) {
+      return 'Brake System';
+    } else if (lowerProblem.includes('electric') || lowerProblem.includes('battery') || lowerProblem.includes('alternator')) {
+      return 'Electrical';
+    } else if (lowerProblem.includes('transmission') || lowerProblem.includes('gear')) {
+      return 'Transmission';
+    } else if (lowerProblem.includes('ac') || lowerProblem.includes('heat') || lowerProblem.includes('hvac')) {
+      return 'HVAC';
+    } else if (lowerProblem.includes('tire') || lowerProblem.includes('wheel') || lowerProblem.includes('suspension')) {
+      return 'Suspension/Tires';
+    } else {
+      return 'General Maintenance';
     }
   };
 
@@ -186,73 +186,96 @@ const AIAssistant = () => {
       <Navbar />
       
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-primary mb-2">AI Maintenance Assistant</h1>
-          <p className="text-muted-foreground">Get instant help with vehicle diagnostics and repairs</p>
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold text-primary mb-2">Vehicle Diagnostics Intake</h1>
+          <p className="text-muted-foreground">Provide vehicle details and describe the problem to get started</p>
         </div>
 
-        <Card className="h-[calc(100vh-280px)]">
-          <CardHeader className="border-b">
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-accent-foreground" />
-              Chat with AI Assistant
-            </CardTitle>
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader>
+            <CardTitle>Vehicle Information & Problem Description</CardTitle>
+            <CardDescription>Fill in all fields to receive AI-powered diagnostics</CardDescription>
           </CardHeader>
-          <CardContent className="p-0 flex flex-col h-[calc(100%-80px)]">
-            <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-              <div className="space-y-4">
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    {message.role === "assistant" && (
-                      <div className="rounded-full bg-accent/10 p-2 h-fit">
-                        <Bot className="h-5 w-5 text-accent-foreground" />
-                      </div>
-                    )}
-                    <div
-                      className={`rounded-lg px-4 py-2 max-w-[80%] ${
-                        message.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      }`}
-                    >
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    </div>
-                    {message.role === "user" && (
-                      <div className="rounded-full bg-primary/10 p-2 h-fit">
-                        <User className="h-5 w-5 text-primary" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {isLoading && (
-                  <div className="flex gap-3">
-                    <div className="rounded-full bg-accent/10 p-2 h-fit">
-                      <Bot className="h-5 w-5 text-accent-foreground" />
-                    </div>
-                    <div className="rounded-lg px-4 py-2 bg-muted">
-                      <p className="text-sm">Thinking...</p>
-                    </div>
-                  </div>
-                )}
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="year">Year</Label>
+                <Select value={vehicleYear} onValueChange={setVehicleYear}>
+                  <SelectTrigger id="year">
+                    <SelectValue placeholder="Select year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {years.map((year) => (
+                      <SelectItem key={year} value={year}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </ScrollArea>
 
-            <div className="p-4 border-t">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Ask about vehicle maintenance, diagnostics, or repairs..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSend()}
-                  disabled={isLoading}
-                />
-                <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
-                  <Send className="h-4 w-4" />
-                </Button>
+              <div className="space-y-2">
+                <Label htmlFor="make">Make</Label>
+                <Select value={vehicleMake} onValueChange={(value) => {
+                  setVehicleMake(value);
+                  setVehicleModel("");
+                }}>
+                  <SelectTrigger id="make">
+                    <SelectValue placeholder="Select make" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {makes.map((make) => (
+                      <SelectItem key={make} value={make}>
+                        {make}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="model">Model</Label>
+                <Select value={vehicleModel} onValueChange={setVehicleModel} disabled={!vehicleMake}>
+                  <SelectTrigger id="model">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vehicleMake && models[vehicleMake]?.map((model) => (
+                      <SelectItem key={model} value={model}>
+                        {model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="problem">Problem Description</Label>
+              <Textarea
+                id="problem"
+                placeholder="Describe the issue you're experiencing with the vehicle..."
+                value={problemDescription}
+                onChange={(e) => setProblemDescription(e.target.value)}
+                className="min-h-[150px]"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                onClick={handleContinue}
+                disabled={isLoading || !vehicleYear || !vehicleMake || !vehicleModel || !problemDescription.trim()}
+                className="min-w-[120px]"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  'Continue'
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
