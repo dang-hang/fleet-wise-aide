@@ -5,7 +5,7 @@ import { Navbar } from "@/components/Navbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send } from "lucide-react";
@@ -315,53 +315,35 @@ const AIAssistant = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="year">Year</Label>
-                    <Select value={vehicleYear} onValueChange={setVehicleYear}>
-                      <SelectTrigger id="year">
-                        <SelectValue placeholder="Select year" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {years.map((year) => (
-                          <SelectItem key={year} value={year}>
-                            {year}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="year"
+                      type="text"
+                      placeholder="e.g. 2020"
+                      value={vehicleYear}
+                      onChange={(e) => setVehicleYear(e.target.value)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="make">Make</Label>
-                    <Select value={vehicleMake} onValueChange={(value) => {
-                      setVehicleMake(value);
-                      setVehicleModel("");
-                    }}>
-                      <SelectTrigger id="make">
-                        <SelectValue placeholder="Select make" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {makes.map((make) => (
-                          <SelectItem key={make} value={make}>
-                            {make}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="make"
+                      type="text"
+                      placeholder="e.g. Toyota"
+                      value={vehicleMake}
+                      onChange={(e) => setVehicleMake(e.target.value)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="model">Model</Label>
-                    <Select value={vehicleModel} onValueChange={setVehicleModel} disabled={!vehicleMake}>
-                      <SelectTrigger id="model">
-                        <SelectValue placeholder="Select model" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vehicleMake && models[vehicleMake]?.map((model) => (
-                          <SelectItem key={model} value={model}>
-                            {model}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="model"
+                      type="text"
+                      placeholder="e.g. Camry"
+                      value={vehicleModel}
+                      onChange={(e) => setVehicleModel(e.target.value)}
+                    />
                   </div>
                 </div>
 
