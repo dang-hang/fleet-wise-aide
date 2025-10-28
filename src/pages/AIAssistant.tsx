@@ -19,6 +19,9 @@ const AIAssistant = () => {
   const [vehicleModel, setVehicleModel] = useState("");
   const [problemDescription, setProblemDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState("");
+  const [showResults, setShowResults] = useState(false);
+  const [savedCaseNumber, setSavedCaseNumber] = useState("");
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 30 }, (_, i) => (currentYear - i).toString());
@@ -85,7 +88,7 @@ const AIAssistant = () => {
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let diagnosticResult = "";
+      let fullDiagnostic = "";
 
       if (reader) {
         while (true) {
@@ -104,7 +107,8 @@ const AIAssistant = () => {
                 const parsed = JSON.parse(jsonStr);
                 const content = parsed.choices?.[0]?.delta?.content;
                 if (content) {
-                  diagnosticResult += content;
+                  fullDiagnostic += content;
+                  setDiagnosticResult(fullDiagnostic);
                 }
               } catch (e) {
                 // Ignore parsing errors
@@ -134,7 +138,7 @@ const AIAssistant = () => {
           vehicle_make: vehicleMake,
           vehicle_model: vehicleModel,
           problem_description: problemDescription,
-          diagnostic_result: diagnosticResult,
+          diagnostic_result: fullDiagnostic,
           category: category,
           status: 'In Progress'
         });
@@ -143,12 +147,13 @@ const AIAssistant = () => {
         throw insertError;
       }
 
+      setSavedCaseNumber(caseNumber);
+      setShowResults(true);
+
       toast({
         title: "Success",
         description: "Diagnostic case created successfully",
       });
-
-      navigate("/case-history");
     } catch (error) {
       console.error("Error creating case:", error);
       toast({
@@ -186,99 +191,171 @@ const AIAssistant = () => {
       <Navbar />
       
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold text-primary mb-2">Vehicle Diagnostics Intake</h1>
-          <p className="text-muted-foreground">Provide vehicle details and describe the problem to get started</p>
-        </div>
+        {!showResults ? (
+          <>
+            <div className="mb-6 text-center">
+              <h1 className="text-3xl font-bold text-primary mb-2">Vehicle Diagnostics Intake</h1>
+              <p className="text-muted-foreground">Provide vehicle details and describe the problem to get started</p>
+            </div>
 
-        <Card className="max-w-2xl mx-auto">
-          <CardHeader>
-            <CardTitle>Vehicle Information & Problem Description</CardTitle>
-            <CardDescription>Fill in all fields to receive AI-powered diagnostics</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="year">Year</Label>
-                <Select value={vehicleYear} onValueChange={setVehicleYear}>
-                  <SelectTrigger id="year">
-                    <SelectValue placeholder="Select year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {years.map((year) => (
-                      <SelectItem key={year} value={year}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <Card className="max-w-2xl mx-auto">
+              <CardHeader>
+                <CardTitle>Vehicle Information & Problem Description</CardTitle>
+                <CardDescription>Fill in all fields to receive AI-powered diagnostics</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="year">Year</Label>
+                    <Select value={vehicleYear} onValueChange={setVehicleYear}>
+                      <SelectTrigger id="year">
+                        <SelectValue placeholder="Select year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {years.map((year) => (
+                          <SelectItem key={year} value={year}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="make">Make</Label>
-                <Select value={vehicleMake} onValueChange={(value) => {
-                  setVehicleMake(value);
+                  <div className="space-y-2">
+                    <Label htmlFor="make">Make</Label>
+                    <Select value={vehicleMake} onValueChange={(value) => {
+                      setVehicleMake(value);
+                      setVehicleModel("");
+                    }}>
+                      <SelectTrigger id="make">
+                        <SelectValue placeholder="Select make" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {makes.map((make) => (
+                          <SelectItem key={make} value={make}>
+                            {make}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="model">Model</Label>
+                    <Select value={vehicleModel} onValueChange={setVehicleModel} disabled={!vehicleMake}>
+                      <SelectTrigger id="model">
+                        <SelectValue placeholder="Select model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vehicleMake && models[vehicleMake]?.map((model) => (
+                          <SelectItem key={model} value={model}>
+                            {model}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="problem">Problem Description</Label>
+                  <Textarea
+                    id="problem"
+                    placeholder="Describe the issue you're experiencing with the vehicle..."
+                    value={problemDescription}
+                    onChange={(e) => setProblemDescription(e.target.value)}
+                    className="min-h-[150px]"
+                  />
+                </div>
+
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    onClick={handleContinue}
+                    disabled={isLoading || !vehicleYear || !vehicleMake || !vehicleModel || !problemDescription.trim()}
+                    className="min-w-[120px]"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Continue'
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <div className="mb-6">
+              <h1 className="text-3xl font-bold text-primary mb-2">AI Diagnostic Results</h1>
+              <p className="text-muted-foreground">Case Number: {savedCaseNumber}</p>
+            </div>
+
+            <div className="max-w-4xl mx-auto space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Vehicle Information</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Year</p>
+                      <p className="font-medium">{vehicleYear}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Make</p>
+                      <p className="font-medium">{vehicleMake}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Model</p>
+                      <p className="font-medium">{vehicleModel}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Problem Description</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm whitespace-pre-wrap">{problemDescription}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>AI Generated Diagnostic Plan & Troubleshooting</CardTitle>
+                  <CardDescription>AI-powered analysis and recommendations</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="prose prose-sm max-w-none">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{diagnosticResult}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => {
+                  setShowResults(false);
+                  setDiagnosticResult("");
+                  setVehicleYear("");
+                  setVehicleMake("");
                   setVehicleModel("");
+                  setProblemDescription("");
                 }}>
-                  <SelectTrigger id="make">
-                    <SelectValue placeholder="Select make" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {makes.map((make) => (
-                      <SelectItem key={make} value={make}>
-                        {make}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="model">Model</Label>
-                <Select value={vehicleModel} onValueChange={setVehicleModel} disabled={!vehicleMake}>
-                  <SelectTrigger id="model">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehicleMake && models[vehicleMake]?.map((model) => (
-                      <SelectItem key={model} value={model}>
-                        {model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  New Diagnosis
+                </Button>
+                <Button onClick={() => navigate("/case-history")}>
+                  View Case History
+                </Button>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="problem">Problem Description</Label>
-              <Textarea
-                id="problem"
-                placeholder="Describe the issue you're experiencing with the vehicle..."
-                value={problemDescription}
-                onChange={(e) => setProblemDescription(e.target.value)}
-                className="min-h-[150px]"
-              />
-            </div>
-
-            <div className="flex gap-3 justify-end">
-              <Button
-                onClick={handleContinue}
-                disabled={isLoading || !vehicleYear || !vehicleMake || !vehicleModel || !problemDescription.trim()}
-                className="min-w-[120px]"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  'Continue'
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          </>
+        )}
       </main>
     </div>
   );

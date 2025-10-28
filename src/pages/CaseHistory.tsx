@@ -18,6 +18,8 @@ interface CaseType {
   vehicle_year: string;
   vehicle_make: string;
   vehicle_model: string;
+  problem_description: string;
+  diagnostic_result: string | null;
 }
 
 const CaseHistory = () => {
@@ -25,6 +27,7 @@ const CaseHistory = () => {
   const [cases, setCases] = useState<CaseType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCase, setSelectedCase] = useState<CaseType | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -74,6 +77,73 @@ const CaseHistory = () => {
         return "";
     }
   };
+
+  if (selectedCase) {
+    return (
+      <div className="min-h-screen bg-secondary/30">
+        <Navbar />
+        
+        <main className="container mx-auto px-4 py-8">
+          <div className="mb-6">
+            <Button variant="ghost" onClick={() => setSelectedCase(null)} className="mb-4">
+              ← Back to Case History
+            </Button>
+            <h1 className="text-3xl font-bold text-primary mb-2">Case Details</h1>
+            <p className="text-muted-foreground">{selectedCase.case_number}</p>
+          </div>
+
+          <div className="max-w-4xl mx-auto space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle>{selectedCase.title}</CardTitle>
+                    <CardDescription>
+                      Created: {new Date(selectedCase.created_at).toLocaleDateString()}
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className={getStatusColor(selectedCase.status)}>
+                    {selectedCase.status}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  {selectedCase.category && <Badge variant="secondary">{selectedCase.category}</Badge>}
+                  <Badge variant="outline">
+                    {`${selectedCase.vehicle_year} ${selectedCase.vehicle_make} ${selectedCase.vehicle_model}`}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Problem Description</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm whitespace-pre-wrap">{selectedCase.problem_description}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>AI Diagnostic Plan & Troubleshooting</CardTitle>
+                <CardDescription>AI-generated analysis and recommendations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="prose prose-sm max-w-none">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {selectedCase.diagnostic_result || "No diagnostic information available"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-secondary/30">
@@ -133,7 +203,9 @@ const CaseHistory = () => {
                         </span>
                       </CardDescription>
                     </div>
-                    <Button variant="outline" size="sm">View Details</Button>
+                    <Button variant="outline" size="sm" onClick={() => setSelectedCase(caseItem)}>
+                      View Details
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
