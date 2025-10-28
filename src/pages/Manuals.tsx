@@ -181,7 +181,7 @@ const Manuals = () => {
 
       toast({
         title: "Success",
-        description: "Manual uploaded successfully",
+        description: "Manual uploaded successfully. Processing document...",
       });
 
       // Reset form and refresh list
@@ -192,6 +192,30 @@ const Manuals = () => {
       setSelectedFile(null);
       setDialogOpen(false);
       fetchManuals();
+
+      // Trigger document parsing (non-blocking)
+      const { data: insertedData } = await supabase
+        .from("manuals")
+        .select("id")
+        .eq("file_path", fileName)
+        .single();
+
+      if (insertedData) {
+        // Call parse function asynchronously
+        supabase.functions
+          .invoke("parse-manual", {
+            body: { manualId: insertedData.id }
+          })
+          .then(() => {
+            toast({
+              title: "Processing Complete",
+              description: "Manual has been indexed for AI reference",
+            });
+          })
+          .catch((err) => {
+            console.error("Parse error:", err);
+          });
+      }
     } catch (error) {
       toast({
         title: "Upload failed",

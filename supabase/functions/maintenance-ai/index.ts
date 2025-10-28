@@ -44,15 +44,34 @@ serve(async (req) => {
 
       if (!error && manuals && manuals.length > 0) {
         vehicleContext = "\n\nRELEVANT REPAIR MANUALS IN DATABASE:\n";
+        
+        // Get page content for each manual
         for (const manual of manuals) {
-          vehicleContext += `- ${manual.title} (${manual.vehicle_type}${manual.vehicle_model ? ' - ' + manual.vehicle_model : ''})`;
+          vehicleContext += `\n--- ${manual.title} (${manual.vehicle_type}${manual.vehicle_model ? ' - ' + manual.vehicle_model : ''})`;
           if (manual.year_range) {
             vehicleContext += ` [Years: ${manual.year_range}]`;
           }
-          vehicleContext += "\n";
+          vehicleContext += " ---\n";
+          
+          // Get pages for this manual
+          const { data: pages } = await supabase
+            .from("manual_pages")
+            .select("page_number, content")
+            .eq("manual_id", manual.id)
+            .order("page_number")
+            .limit(10); // Limit to first 10 pages to avoid token limits
+          
+          if (pages && pages.length > 0) {
+            for (const page of pages) {
+              vehicleContext += `[Page ${page.page_number}]\n${page.content.substring(0, 500)}...\n\n`;
+            }
+          } else if (manual.parsed_content) {
+            vehicleContext += `${manual.parsed_content.substring(0, 1000)}...\n\n`;
+          }
         }
-        vehicleContext += "\nYou have access to these repair manuals in the system. Reference them when providing diagnostic information and repair instructions.\n";
-        console.log("Found manuals:", manuals.length);
+        
+        vehicleContext += "\nIMPORTANT: When referencing information from these manuals, ALWAYS cite the specific document name and page number (e.g., 'According to Ford Crown Victoria Service Manual, Page 3...').\n";
+        console.log("Found manuals with content:", manuals.length);
       } else {
         console.log("No manuals found or error:", error);
       }
@@ -73,7 +92,12 @@ Always provide clear, actionable guidance. When discussing repairs, include:
 4. Common mistakes to avoid
 5. Expected time to complete
 
-If relevant repair manuals are available in the database, mention them and reference their content in your responses.
+CRITICAL: When you use information from the repair manuals provided above, you MUST cite your sources by mentioning:
+1. The exact manual name (e.g., "Ford Crown Victoria Service Manual")
+2. The specific page number where you found the information (e.g., "Page 5")
+
+Example: "According to the Ford Crown Victoria Service Manual (Page 5), the recommended oil change interval is..."
+
 Be concise but thorough. If you need more information to provide accurate guidance, ask specific questions.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {

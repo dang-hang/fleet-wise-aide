@@ -62,6 +62,38 @@ export type Database = {
         }
         Relationships: []
       }
+      manual_pages: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          manual_id: string
+          page_number: number
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          id?: string
+          manual_id: string
+          page_number: number
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          manual_id?: string
+          page_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_pages_manual_id_fkey"
+            columns: ["manual_id"]
+            isOneToOne: false
+            referencedRelation: "manuals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manuals: {
         Row: {
           created_at: string
@@ -69,7 +101,9 @@ export type Database = {
           file_size: number | null
           file_type: string
           id: string
+          parsed_content: string | null
           title: string
+          total_pages: number | null
           updated_at: string
           user_id: string
           vehicle_model: string | null
@@ -82,7 +116,9 @@ export type Database = {
           file_size?: number | null
           file_type: string
           id?: string
+          parsed_content?: string | null
           title: string
+          total_pages?: number | null
           updated_at?: string
           user_id: string
           vehicle_model?: string | null
@@ -95,7 +131,9 @@ export type Database = {
           file_size?: number | null
           file_type?: string
           id?: string
+          parsed_content?: string | null
           title?: string
+          total_pages?: number | null
           updated_at?: string
           user_id?: string
           vehicle_model?: string | null
