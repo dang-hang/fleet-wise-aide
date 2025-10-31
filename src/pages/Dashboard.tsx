@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Wrench, BookOpen, Bot, History, AlertCircle, CheckCircle, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -29,6 +30,53 @@ const Dashboard = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  const { data: vehiclesCount } = useQuery({
+    queryKey: ["vehicles-count"],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("vehicles")
+        .select("*", { count: "exact", head: true });
+      if (error) throw error;
+      return count || 0;
+    },
+  });
+
+  const { data: casesStats } = useQuery({
+    queryKey: ["cases-stats"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cases")
+        .select("status, created_at");
+      
+      if (error) throw error;
+
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const stats = {
+        pending: data?.filter(c => c.status === "Pending" || c.status === "In Progress").length || 0,
+        critical: data?.filter(c => c.status === "On Hold").length || 0,
+        completedThisMonth: data?.filter(c => {
+          const caseDate = new Date(c.created_at);
+          return c.status === "Completed" && caseDate >= startOfMonth;
+        }).length || 0,
+      };
+
+      return stats;
+    },
+  });
+
+  const { data: manualsCount } = useQuery({
+    queryKey: ["manuals-count"],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("manuals")
+        .select("*", { count: "exact", head: true });
+      if (error) throw error;
+      return count || 0;
+    },
+  });
+
   return (
     <div className="min-h-screen bg-secondary/30">
       <Navbar />
@@ -45,36 +93,36 @@ const Dashboard = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Active Vehicles</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-primary">24</div>
+              <div className="text-3xl font-bold text-primary">{vehiclesCount ?? 0}</div>
               <Badge variant="outline" className="mt-2">
                 <CheckCircle className="mr-1 h-3 w-3" />
-                Operational
+                In Fleet
               </Badge>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-yellow-500">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Pending Maintenance</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pending Cases</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">8</div>
+              <div className="text-3xl font-bold text-yellow-600">{casesStats?.pending ?? 0}</div>
               <Badge variant="outline" className="mt-2 border-yellow-500 text-yellow-700">
                 <Clock className="mr-1 h-3 w-3" />
-                Scheduled
+                Active
               </Badge>
             </CardContent>
           </Card>
 
           <Card className="border-l-4 border-l-destructive">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Critical Issues</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">On Hold</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-destructive">3</div>
+              <div className="text-3xl font-bold text-destructive">{casesStats?.critical ?? 0}</div>
               <Badge variant="destructive" className="mt-2">
                 <AlertCircle className="mr-1 h-3 w-3" />
-                Urgent
+                Attention
               </Badge>
             </CardContent>
           </Card>
@@ -84,10 +132,10 @@ const Dashboard = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Completed This Month</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-600">42</div>
+              <div className="text-3xl font-bold text-green-600">{casesStats?.completedThisMonth ?? 0}</div>
               <Badge variant="outline" className="mt-2 border-green-500 text-green-700">
                 <CheckCircle className="mr-1 h-3 w-3" />
-                Services
+                Cases
               </Badge>
             </CardContent>
           </Card>
@@ -108,7 +156,7 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Browse comprehensive repair manuals for all fleet vehicles
+                Browse comprehensive repair manuals for all fleet vehicles ({manualsCount ?? 0} available)
               </p>
               <Button asChild className="w-full">
                 <Link to="/manuals">
