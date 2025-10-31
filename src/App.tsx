@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Manuals from "./pages/Manuals";
 import AIAssistant from "./pages/AIAssistant";
 import CaseHistory from "./pages/CaseHistory";
+import Vehicles from "./pages/Vehicles";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => {
             <Route path="/manuals" element={<Manuals />} />
             <Route path="/ai-assistant" element={<AIAssistant />} />
             <Route path="/case-history" element={<CaseHistory />} />
+            <Route path="/vehicles" element={<Vehicles />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

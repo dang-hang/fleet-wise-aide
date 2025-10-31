@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Car } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 const AIAssistant = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const AIAssistant = () => {
   const [vehicleYear, setVehicleYear] = useState("");
   const [vehicleMake, setVehicleMake] = useState("");
   const [vehicleModel, setVehicleModel] = useState("");
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [problemDescription, setProblemDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -54,6 +56,39 @@ const AIAssistant = () => {
     };
     checkAuth();
   }, [navigate]);
+
+  const { data: savedVehicles } = useQuery({
+    queryKey: ["vehicles"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from("vehicles")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const handleVehicleSelect = (vehicleId: string) => {
+    setSelectedVehicleId(vehicleId);
+    const vehicle = savedVehicles?.find(v => v.id === vehicleId);
+    if (vehicle) {
+      setVehicleYear(vehicle.year);
+      setVehicleMake(vehicle.make);
+      setVehicleModel(vehicle.model);
+    }
+  };
+
+  const handleManualInput = () => {
+    setSelectedVehicleId("");
+    setVehicleYear("");
+    setVehicleMake("");
+    setVehicleModel("");
+  };
 
   const handleContinue = async () => {
     if (!vehicleYear || !vehicleMake || !vehicleModel || !problemDescription.trim()) {
@@ -355,6 +390,38 @@ const AIAssistant = () => {
                 <CardDescription>Fill in all fields to receive AI-powered diagnostics</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {savedVehicles && savedVehicles.length > 0 && (
+                  <div className="space-y-2">
+                    <Label htmlFor="saved-vehicle">Quick Select Saved Vehicle</Label>
+                    <div className="flex gap-2">
+                      <Select value={selectedVehicleId} onValueChange={handleVehicleSelect}>
+                        <SelectTrigger id="saved-vehicle">
+                          <SelectValue placeholder="Select a saved vehicle..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {savedVehicles.map((vehicle) => (
+                            <SelectItem key={vehicle.id} value={vehicle.id}>
+                              <div className="flex items-center gap-2">
+                                <Car className="h-4 w-4" />
+                                {vehicle.year} {vehicle.make} {vehicle.model}
+                                {vehicle.license_plate && ` - ${vehicle.license_plate}`}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedVehicleId && (
+                        <Button variant="outline" onClick={handleManualInput}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Or enter vehicle details manually below
+                    </p>
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="year">Year</Label>

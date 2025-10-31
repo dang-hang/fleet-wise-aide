@@ -54,6 +54,13 @@ export const Navbar = () => {
               <Link to="/manuals">Manuals</Link>
             </Button>
             <Button
+              variant={isActive("/vehicles") ? "default" : "ghost"}
+              asChild
+              className="font-medium"
+            >
+              <Link to="/vehicles">Vehicles</Link>
+            </Button>
+            <Button
               variant={isActive("/ai-assistant") ? "default" : "ghost"}
               asChild
               className="font-medium"
