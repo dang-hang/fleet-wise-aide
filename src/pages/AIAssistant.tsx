@@ -11,8 +11,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, Car } from "lucide-react";
+import { Loader2, Send, Car, FileText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
+
+interface Citation {
+  label: string;
+  manualId: string;
+  page: number;
+  bbox?: { x1: number; y1: number; x2: number; y2: number };
+  snippet?: string;
+  manualTitle?: string;
+}
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  citations?: Record<string, Citation>;
+}
 
 const AIAssistant = () => {
   const navigate = useNavigate();
@@ -28,8 +51,9 @@ const AIAssistant = () => {
   const [savedCaseNumber, setSavedCaseNumber] = useState("");
   const [savedCaseId, setSavedCaseId] = useState("");
   const [caseStatus, setCaseStatus] = useState("In Progress");
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant', content: string }>>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [currentMessage, setCurrentMessage] = useState("");
+  const [citations, setCitations] = useState<Record<string, Citation>>({});
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 30 }, (_, i) => (currentYear - i).toString());
@@ -132,6 +156,7 @@ const AIAssistant = () => {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullDiagnostic = "";
+      let accumulatedCitations: Record<string, Citation> = {};
 
       // Add user message to chat
       setMessages([...initialMessages]);
@@ -142,36 +167,41 @@ const AIAssistant = () => {
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const jsonStr = line.slice(6).trim();
-              if (jsonStr === "[DONE]") continue;
-
-              try {
-                const parsed = JSON.parse(jsonStr);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  fullDiagnostic += content;
-                  // Update assistant message in real-time
-                  setMessages(prev => {
-                    const newMessages = [...prev];
-                    const lastMsg = newMessages[newMessages.length - 1];
-                    if (lastMsg?.role === 'assistant') {
-                      lastMsg.content = fullDiagnostic;
-                    } else {
-                      newMessages.push({ role: 'assistant', content: fullDiagnostic });
-                    }
-                    return newMessages;
-                  });
-                }
-              } catch (e) {
-                // Ignore parsing errors
+          
+          // Check if chunk contains citations JSON
+          if (chunk.includes('{"citations":{')) {
+            try {
+              const citationsJson = chunk.match(/\{"citations":\{.*\}\}/)?.[0];
+              if (citationsJson) {
+                const parsed = JSON.parse(citationsJson);
+                accumulatedCitations = parsed.citations || {};
+                continue; // Don't add citations JSON to content
               }
+            } catch (e) {
+              // Not valid JSON, treat as regular content
             }
           }
+          
+          fullDiagnostic += chunk;
+          
+          // Update assistant message in real-time
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.content = fullDiagnostic;
+              lastMsg.citations = accumulatedCitations;
+            } else {
+              newMessages.push({ role: 'assistant', content: fullDiagnostic, citations: accumulatedCitations });
+            }
+            return newMessages;
+          });
         }
+      }
+      
+      // Store citations for rendering
+      if (Object.keys(accumulatedCitations).length > 0) {
+        setCitations(accumulatedCitations);
       }
 
       // Generate case number
@@ -253,6 +283,7 @@ const AIAssistant = () => {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let assistantResponse = "";
+      let accumulatedCitations: Record<string, Citation> = {};
 
       if (reader) {
         while (true) {
@@ -260,35 +291,40 @@ const AIAssistant = () => {
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const jsonStr = line.slice(6).trim();
-              if (jsonStr === "[DONE]") continue;
-
-              try {
-                const parsed = JSON.parse(jsonStr);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  assistantResponse += content;
-                  setMessages(prev => {
-                    const newMessages = [...prev];
-                    const lastMsg = newMessages[newMessages.length - 1];
-                    if (lastMsg?.role === 'assistant') {
-                      lastMsg.content = assistantResponse;
-                    } else {
-                      newMessages.push({ role: 'assistant', content: assistantResponse });
-                    }
-                    return newMessages;
-                  });
-                }
-              } catch (e) {
-                // Ignore parsing errors
+          
+          // Check if chunk contains citations JSON
+          if (chunk.includes('{"citations":{')) {
+            try {
+              const citationsJson = chunk.match(/\{"citations":\{.*\}\}/)?.[0];
+              if (citationsJson) {
+                const parsed = JSON.parse(citationsJson);
+                accumulatedCitations = parsed.citations || {};
+                continue; // Don't add citations JSON to content
               }
+            } catch (e) {
+              // Not valid JSON, treat as regular content
             }
           }
+          
+          assistantResponse += chunk;
+          
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.content = assistantResponse;
+              lastMsg.citations = accumulatedCitations;
+            } else {
+              newMessages.push({ role: 'assistant', content: assistantResponse, citations: accumulatedCitations });
+            }
+            return newMessages;
+          });
         }
+      }
+      
+      // Store citations for rendering
+      if (Object.keys(accumulatedCitations).length > 0) {
+        setCitations(accumulatedCitations);
       }
 
       // Update the case in database with new conversation
@@ -557,7 +593,7 @@ const AIAssistant = () => {
                             {message.role === 'user' ? (
                               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                             ) : (
-                              <MarkdownRenderer content={message.content} />
+                              <MarkdownRenderer content={message.content} citations={message.citations || citations} />
                             )}
                           </div>
                         </div>
@@ -570,6 +606,66 @@ const AIAssistant = () => {
                         </div>
                       )}
                     </div>
+
+                    {/* Sources Drawer */}
+                    {Object.keys(citations).length > 0 && (
+                      <div className="border-t pt-4">
+                        <Drawer>
+                          <DrawerTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-full">
+                              <FileText className="h-4 w-4 mr-2" />
+                              View Sources ({Object.keys(citations).length})
+                            </Button>
+                          </DrawerTrigger>
+                          <DrawerContent>
+                            <DrawerHeader>
+                              <DrawerTitle>Sources Used</DrawerTitle>
+                              <DrawerDescription>
+                                Manual excerpts and references used in this diagnostic
+                              </DrawerDescription>
+                            </DrawerHeader>
+                            <div className="max-h-[400px] overflow-y-auto px-4">
+                              <div className="space-y-4 pb-4">
+                                {Object.entries(citations).map(([key, citation]) => (
+                                  <Card key={key} className="p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <Badge variant="secondary">{key}</Badge>
+                                          <span className="text-sm text-muted-foreground">
+                                            Page {citation.page}
+                                          </span>
+                                        </div>
+                                        {citation.manualTitle && (
+                                          <p className="text-sm font-medium mb-2">{citation.manualTitle}</p>
+                                        )}
+                                        {citation.snippet && (
+                                          <p className="text-sm text-muted-foreground line-clamp-3">
+                                            {citation.snippet}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => {
+                                          let url = `/manual/${citation.manualId}?page=${citation.page}`;
+                                          if (citation.bbox) {
+                                            url += `&x1=${citation.bbox.x1}&y1=${citation.bbox.y1}&x2=${citation.bbox.x2}&y2=${citation.bbox.y2}`;
+                                          }
+                                          navigate(url);
+                                        }}
+                                      >
+                                        Open
+                                      </Button>
+                                    </div>
+                                  </Card>
+                                ))}
+                              </div>
+                            </div>
+                          </DrawerContent>
+                        </Drawer>
+                      </div>
+                    )}
 
                     <div className="flex gap-2">
                       <Textarea

@@ -11,6 +11,7 @@ import AIAssistant from "./pages/AIAssistant";
 import CaseHistory from "./pages/CaseHistory";
 import Vehicles from "./pages/Vehicles";
 import NotFound from "./pages/NotFound";
+import ManualViewer from "./pages/ManualViewer";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +30,7 @@ const App = () => {
             <Route path="/ai-assistant" element={<AIAssistant />} />
             <Route path="/case-history" element={<CaseHistory />} />
             <Route path="/vehicles" element={<Vehicles />} />
+            <Route path="/manual/:manualId" element={<ManualViewer />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -1,11 +1,21 @@
 import { cn } from "@/lib/utils";
+import { CitationChip } from "./CitationChip";
+
+interface Citation {
+  label: string;
+  manualId: string;
+  page: number;
+  bbox?: { x1: number; y1: number; x2: number; y2: number };
+  snippet?: string;
+}
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  citations?: Record<string, Citation>;
 }
 
-export const MarkdownRenderer = ({ content, className }: MarkdownRendererProps) => {
+export const MarkdownRenderer = ({ content, className, citations }: MarkdownRendererProps) => {
   const renderContent = (text: string) => {
     const lines = text.split('\n');
     const elements: JSX.Element[] = [];
@@ -111,6 +121,34 @@ export const MarkdownRenderer = ({ content, className }: MarkdownRendererProps) 
     let key = 0;
 
     while (remaining) {
+      // Citation markers {{c#}}
+      const citationMatch = remaining.match(/\{\{(c\d+)\}\}/);
+      if (citationMatch && citations) {
+        const beforeCitation = remaining.substring(0, citationMatch.index);
+        if (beforeCitation) parts.push(beforeCitation);
+        
+        const citationKey = citationMatch[1];
+        const citation = citations[citationKey];
+        
+        if (citation) {
+          parts.push(
+            <CitationChip
+              key={`citation-${key++}`}
+              label={citationKey}
+              manualId={citation.manualId}
+              page={citation.page}
+              bbox={citation.bbox}
+              snippet={citation.snippet}
+            />
+          );
+        } else {
+          parts.push(citationMatch[0]);
+        }
+        
+        remaining = remaining.substring((citationMatch.index || 0) + citationMatch[0].length);
+        continue;
+      }
+
       // Bold text (**text**)
       const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
       if (boldMatch) {
