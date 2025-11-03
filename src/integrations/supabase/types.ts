@@ -65,6 +65,85 @@ export type Database = {
         }
         Relationships: []
       }
+      manual_chunks: {
+        Row: {
+          content: string
+          created_at: string | null
+          embedding: string | null
+          id: string
+          manual_id: string
+          metadata: Json | null
+          span_ids: string[] | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          manual_id: string
+          metadata?: Json | null
+          span_ids?: string[] | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          manual_id?: string
+          metadata?: Json | null
+          span_ids?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_chunks_manual_id_fkey"
+            columns: ["manual_id"]
+            isOneToOne: false
+            referencedRelation: "manuals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manual_figures: {
+        Row: {
+          bbox: Json
+          caption: string | null
+          created_at: string | null
+          figure_index: number
+          id: string
+          manual_id: string
+          page_number: number
+          storage_path: string
+        }
+        Insert: {
+          bbox: Json
+          caption?: string | null
+          created_at?: string | null
+          figure_index: number
+          id?: string
+          manual_id: string
+          page_number: number
+          storage_path: string
+        }
+        Update: {
+          bbox?: Json
+          caption?: string | null
+          created_at?: string | null
+          figure_index?: number
+          id?: string
+          manual_id?: string
+          page_number?: number
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_figures_manual_id_fkey"
+            columns: ["manual_id"]
+            isOneToOne: false
+            referencedRelation: "manuals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manual_pages: {
         Row: {
           content: string
@@ -97,6 +176,88 @@ export type Database = {
           },
         ]
       }
+      manual_spans: {
+        Row: {
+          bbox: Json
+          created_at: string | null
+          font_name: string | null
+          font_size: number | null
+          id: string
+          manual_id: string
+          page_number: number
+          text: string
+        }
+        Insert: {
+          bbox: Json
+          created_at?: string | null
+          font_name?: string | null
+          font_size?: number | null
+          id?: string
+          manual_id: string
+          page_number: number
+          text: string
+        }
+        Update: {
+          bbox?: Json
+          created_at?: string | null
+          font_name?: string | null
+          font_size?: number | null
+          id?: string
+          manual_id?: string
+          page_number?: number
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_spans_manual_id_fkey"
+            columns: ["manual_id"]
+            isOneToOne: false
+            referencedRelation: "manuals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manual_tables: {
+        Row: {
+          bbox: Json
+          caption: string | null
+          created_at: string | null
+          data: Json
+          id: string
+          manual_id: string
+          page_number: number
+          table_index: number
+        }
+        Insert: {
+          bbox: Json
+          caption?: string | null
+          created_at?: string | null
+          data: Json
+          id?: string
+          manual_id: string
+          page_number: number
+          table_index: number
+        }
+        Update: {
+          bbox?: Json
+          caption?: string | null
+          created_at?: string | null
+          data?: Json
+          id?: string
+          manual_id?: string
+          page_number?: number
+          table_index?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_tables_manual_id_fkey"
+            columns: ["manual_id"]
+            isOneToOne: false
+            referencedRelation: "manuals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manuals: {
         Row: {
           created_at: string
@@ -105,6 +266,7 @@ export type Database = {
           file_type: string
           id: string
           parsed_content: string | null
+          sha256: string | null
           title: string
           total_pages: number | null
           updated_at: string
@@ -120,6 +282,7 @@ export type Database = {
           file_type: string
           id?: string
           parsed_content?: string | null
+          sha256?: string | null
           title: string
           total_pages?: number | null
           updated_at?: string
@@ -135,6 +298,7 @@ export type Database = {
           file_type?: string
           id?: string
           parsed_content?: string | null
+          sha256?: string | null
           title?: string
           total_pages?: number | null
           updated_at?: string
@@ -190,6 +354,21 @@ export type Database = {
     }
     Functions: {
       generate_case_number: { Args: never; Returns: string }
+      match_chunks: {
+        Args: {
+          manual_filter?: string
+          match_count?: number
+          query_embedding: string
+        }
+        Returns: {
+          content: string
+          id: string
+          manual_id: string
+          metadata: Json
+          similarity: number
+          span_ids: string[]
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
