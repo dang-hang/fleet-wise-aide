@@ -24,57 +24,81 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Extract vehicle information from the first user message
-    let vehicleContext = "";
-    const firstMessage = messages.find((m: any) => m.role === "user")?.content || "";
+    // Get last user message for search
+    const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
     
-    // Try to extract vehicle make/model from the message
-    const vehicleMatch = firstMessage.match(/Vehicle:\s*(\d+)\s+([A-Za-z]+)\s+([A-Za-z\s]+)/);
-    
-    if (vehicleMatch) {
-      const [, year, make, model] = vehicleMatch;
-      console.log(`Searching for manuals: ${make} ${model}`);
-      
-      // Query relevant manuals from the database
-      const { data: manuals, error } = await supabase
-        .from("manuals")
-        .select("*")
-        .or(`vehicle_type.ilike.%${make}%,vehicle_model.ilike.%${model}%`)
-        .limit(5);
+    console.log("Searching for relevant manual content:", lastUserMessage);
 
-      if (!error && manuals && manuals.length > 0) {
-        vehicleContext = "\n\nRELEVANT REPAIR MANUALS IN DATABASE:\n";
+    // Call search function to get relevant snippets
+    const { data: searchResults, error: searchError } = await supabase.functions.invoke("search", {
+      body: { 
+        query: lastUserMessage,
+        topK: 5
+      }
+    });
+
+    if (searchError) {
+      console.error("Search error:", searchError);
+    }
+
+    // Build citation map and context
+    const citations: any[] = [];
+    let ragContext = "";
+
+    if (searchResults?.results && searchResults.results.length > 0) {
+      console.log(`Found ${searchResults.results.length} relevant chunks`);
+      
+      ragContext = "\n\n=== RELEVANT MANUAL EXCERPTS ===\n\n";
+      
+      searchResults.results.forEach((result: any, index: number) => {
+        const citationId = `c${index + 1}`;
         
-        // Get page content for each manual
-        for (const manual of manuals) {
-          vehicleContext += `\n--- ${manual.title} (${manual.vehicle_type}${manual.vehicle_model ? ' - ' + manual.vehicle_model : ''})`;
-          if (manual.year_range) {
-            vehicleContext += ` [Years: ${manual.year_range}]`;
-          }
-          vehicleContext += " ---\n";
-          
-          // Get pages for this manual
-          const { data: pages } = await supabase
-            .from("manual_pages")
-            .select("page_number, content")
-            .eq("manual_id", manual.id)
-            .order("page_number")
-            .limit(10); // Limit to first 10 pages to avoid token limits
-          
-          if (pages && pages.length > 0) {
-            for (const page of pages) {
-              vehicleContext += `[Page ${page.page_number}]\n${page.content.substring(0, 500)}...\n\n`;
-            }
-          } else if (manual.parsed_content) {
-            vehicleContext += `${manual.parsed_content.substring(0, 1000)}...\n\n`;
-          }
+        // Build citation entry
+        const citation = {
+          id: citationId,
+          chunkId: result.chunk.id,
+          manualId: result.chunk.metadata?.manual_id || result.manual?.id,
+          manualTitle: result.manual?.title || "Unknown Manual",
+          vehicleType: result.manual?.vehicle_type || "",
+          vehicleModel: result.manual?.vehicle_model || "",
+          content: result.chunk.content,
+          pageNumbers: result.pageNumbers || [],
+          similarity: result.chunk.similarity,
+          spans: result.spans || [],
+          figures: result.figures || [],
+          tables: result.tables || []
+        };
+        
+        citations.push(citation);
+        
+        // Add to context
+        ragContext += `[${citationId}] ${citation.manualTitle}`;
+        if (citation.vehicleType) {
+          ragContext += ` (${citation.vehicleType}`;
+          if (citation.vehicleModel) ragContext += ` ${citation.vehicleModel}`;
+          ragContext += ")";
+        }
+        if (citation.pageNumbers.length > 0) {
+          ragContext += ` - Pages: ${citation.pageNumbers.join(", ")}`;
+        }
+        ragContext += `\nSimilarity: ${(citation.similarity * 100).toFixed(1)}%\n`;
+        ragContext += `${citation.content}\n`;
+        
+        // Add figures if present
+        if (citation.figures.length > 0) {
+          ragContext += `\nFigures: ${citation.figures.map((f: any) => f.caption || `Figure ${f.figure_index}`).join(", ")}\n`;
         }
         
-        vehicleContext += "\nIMPORTANT: When referencing information from these manuals, ALWAYS cite the specific document name and page number (e.g., 'According to Ford Crown Victoria Service Manual, Page 3...').\n";
-        console.log("Found manuals with content:", manuals.length);
-      } else {
-        console.log("No manuals found or error:", error);
-      }
+        // Add tables if present
+        if (citation.tables.length > 0) {
+          ragContext += `\nTables: ${citation.tables.map((t: any) => t.caption || `Table ${t.table_index}`).join(", ")}\n`;
+        }
+        
+        ragContext += "\n---\n\n";
+      });
+    } else {
+      console.log("No search results found");
+      ragContext = "\n\n=== NO RELEVANT MANUAL EXCERPTS FOUND ===\nProvide general guidance based on standard automotive repair practices.\n\n";
     }
 
     const systemPrompt = `You are an expert vehicle maintenance assistant for the PASCO Sheriff Office fleet. You specialize in:
@@ -84,19 +108,22 @@ serve(async (req) => {
 - Recommending preventive maintenance schedules
 - Safety protocols for fleet vehicles
 - Common issues with police vehicles (Crown Victoria, Tahoe, Charger, F-150, Silverado, Explorer)
-${vehicleContext}
-Always provide clear, actionable guidance. When discussing repairs, include:
-1. Safety precautions
-2. Required tools
-3. Step-by-step instructions
-4. Common mistakes to avoid
-5. Expected time to complete
 
-CRITICAL: When you use information from the repair manuals provided above, you MUST cite your sources by mentioning:
-1. The exact manual name (e.g., "Ford Crown Victoria Service Manual")
-2. The specific page number where you found the information (e.g., "Page 5")
+CRITICAL INSTRUCTIONS:
+1. Use ONLY the information provided in the manual excerpts below
+2. When referencing information, cite using citation markers: {{c1}}, {{c2}}, etc.
+3. Place citation markers immediately after the relevant statement
+4. You may use multiple citations for a single statement if applicable
+5. Do NOT make up information not present in the excerpts
+6. If the excerpts don't contain enough information, say so explicitly
 
-Example: "According to the Ford Crown Victoria Service Manual (Page 5), the recommended oil change interval is..."
+${ragContext}
+
+RESPONSE FORMAT:
+- Provide clear, actionable guidance
+- Include: safety precautions, required tools, step-by-step instructions, common mistakes, expected time
+- Always cite your sources using {{c#}} markers
+- Example: "The recommended oil change interval is 5,000 miles {{c1}}. Use 5W-30 synthetic oil {{c2}}."
 
 Be concise but thorough. If you need more information to provide accurate guidance, ask specific questions.`;
 
@@ -147,7 +174,53 @@ Be concise but thorough. If you need more information to provide accurate guidan
       );
     }
 
-    return new Response(response.body, {
+    // Stream the response and append citations at the end
+    const reader = response.body?.getReader();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        if (!reader) return;
+        
+        try {
+          let done = false;
+          
+          while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            
+            if (value) {
+              // Forward the chunk as-is
+              controller.enqueue(value);
+            }
+          }
+          
+          // After stream ends, append citations as a special SSE event
+          if (citations.length > 0) {
+            const citationsEvent = `data: ${JSON.stringify({
+              choices: [{
+                delta: {
+                  content: "",
+                  citations: citations
+                }
+              }]
+            })}\n\n`;
+            
+            controller.enqueue(encoder.encode(citationsEvent));
+          }
+          
+          // Send final [DONE]
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        } catch (error) {
+          console.error("Streaming error:", error);
+          controller.error(error);
+        }
+      }
+    });
+
+    return new Response(stream, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (error) {
