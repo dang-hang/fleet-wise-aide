@@ -47,7 +47,7 @@ serve(async (req) => {
 
     console.log("Starting manual parsing for:", manualId);
 
-    // Get manual details
+    // Get manual details and verify ownership
     const { data: manual, error: manualError } = await supabase
       .from("manuals")
       .select("*")
@@ -55,11 +55,25 @@ serve(async (req) => {
       .single();
 
     if (manualError || !manual) {
-      throw new Error("Manual not found");
+      return new Response(JSON.stringify({ error: "Manual not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Download file from storage
-    const { data: fileData, error: downloadError } = await supabase.storage
+    // Verify ownership
+    if (manual.user_id !== user.id) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Create service client for storage and database operations that need elevated privileges
+    const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Download file from storage using service client
+    const { data: fileData, error: downloadError } = await supabaseService.storage
       .from("manuals")
       .download(manual.file_path);
 
@@ -172,7 +186,7 @@ serve(async (req) => {
 
     // Insert spans first
     console.log(`Inserting ${spans.length} spans...`);
-    const { data: insertedSpans, error: spansError } = await supabase
+    const { data: insertedSpans, error: spansError } = await supabaseService
       .from("manual_spans")
       .insert(spans)
       .select("id, page_number");
@@ -198,7 +212,7 @@ serve(async (req) => {
 
     // Insert chunks (without embeddings for now - will be generated separately)
     console.log(`Inserting ${chunks.length} chunks...`);
-    const { error: chunksError } = await supabase
+    const { error: chunksError } = await supabaseService
       .from("manual_chunks")
       .insert(chunks);
 
@@ -210,7 +224,7 @@ serve(async (req) => {
     // Insert figures
     if (figures.length > 0) {
       console.log(`Inserting ${figures.length} figures...`);
-      const { error: figuresError } = await supabase
+      const { error: figuresError } = await supabaseService
         .from("manual_figures")
         .insert(figures);
 
@@ -222,7 +236,7 @@ serve(async (req) => {
     // Insert tables
     if (tables.length > 0) {
       console.log(`Inserting ${tables.length} tables...`);
-      const { error: tablesError } = await supabase
+      const { error: tablesError } = await supabaseService
         .from("manual_tables")
         .insert(tables);
 
@@ -232,7 +246,7 @@ serve(async (req) => {
     }
 
     // Update manual with metadata
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseService
       .from("manuals")
       .update({
         sha256,
