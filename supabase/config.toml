@@ -1,13 +1,1 @@
 project_id = "rturhpxizpendhaszplw"
-
-[functions.maintenance-ai]
-verify_jwt = false
-
-[functions.parse-manual]
-verify_jwt = false
-
-[functions.search]
-verify_jwt = false
-
-[functions.signed-url]
-verify_jwt = false

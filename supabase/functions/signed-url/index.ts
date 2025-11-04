@@ -12,6 +12,15 @@ serve(async (req) => {
   }
 
   try {
+    // Verify authentication
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { path } = await req.json();
     
     if (!path) {
@@ -19,13 +28,40 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    // Validate user authentication
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     console.log("Generating signed URL for:", path);
 
+    // Validate that the path belongs to the authenticated user
+    // Path format: {user_id}/{filename}
+    const pathUserId = path.split('/')[0];
+    if (pathUserId !== user.id) {
+      console.error("Path does not belong to user:", user.id, "vs", pathUserId);
+      return new Response(JSON.stringify({ error: "Forbidden - you can only access your own files" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Use service client for storage operations
+    const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
+
     // Generate a signed URL valid for 10 minutes (600 seconds)
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabaseService.storage
       .from("manuals")
       .createSignedUrl(path, 600);
 
