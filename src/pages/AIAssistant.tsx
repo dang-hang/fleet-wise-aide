@@ -137,12 +137,19 @@ const AIAssistant = () => {
       const initialPrompt = `Vehicle: ${vehicleYear} ${vehicleMake} ${vehicleModel}\nProblem: ${problemDescription}`;
       const initialMessages = [{ role: 'user' as const, content: initialPrompt }];
       
-      // Get diagnostic from AI
+      // Get user's session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate("/auth");
+        return;
+      }
+      
+      // Get diagnostic from AI with proper authentication
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maintenance-ai`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ 
           messages: initialMessages
@@ -265,11 +272,18 @@ const AIAssistant = () => {
     setIsLoading(true);
 
     try {
+      // Get user's session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate("/auth");
+        return;
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maintenance-ai`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ 
           messages: updatedMessages
