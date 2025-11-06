@@ -106,21 +106,15 @@ serve(async (req) => {
       totalPages = pdfDoc.numPages;
       console.log(`PDF has ${totalPages} pages`);
       
-      // For large PDFs (>100 pages), only extract metadata initially
-      // Full text extraction can be done in batches later
-      const maxPagesToProcess = 100;
-      const pagesToProcess = Math.min(totalPages, maxPagesToProcess);
+      console.log(`Extracting text from all ${totalPages} pages...`);
       
-      console.log(`Extracting text from first ${pagesToProcess} pages (full parsing can be done later)...`);
-      
-      // Extract text from limited pages
-      for (let pageNum = 1; pageNum <= pagesToProcess; pageNum++) {
+      // Extract text from all pages
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         const page = await pdfDoc.getPage(pageNum);
         const textContent = await page.getTextContent();
         
-        // Create spans from text items (limit to avoid memory issues)
-        const items = textContent.items.slice(0, 50); // Limit items per page
-        items.forEach((item: any) => {
+        // Create spans from text items
+        textContent.items.forEach((item: any) => {
           if (item.str && item.str.trim().length > 0) {
             spans.push({
               manual_id: manualId,
@@ -138,21 +132,8 @@ serve(async (req) => {
           }
         });
         
-        // Check for diagram keywords to create figure placeholders
-        const pageText = textContent.items.map((i: any) => i.str).join(' ').toLowerCase();
-        const figureKeywords = ['figure', 'diagram', 'illustration', 'image', 'fig.', 'schematic', 'coolant', 'engine', 'component'];
-        const hasFigure = figureKeywords.some(kw => pageText.includes(kw));
-        
-        if (hasFigure) {
-          figures.push({
-            manual_id: manualId,
-            page_number: pageNum,
-            figure_index: 0,
-            bbox: { x0: 100, y0: 200, x1: 500, y1: 500 },
-            storage_path: null,
-            caption: pageText.match(/(figure|fig\.|diagram|schematic|illustration)\s+[\d.]+[^\n.]*/i)?.[0] || `Diagram on page ${pageNum}`
-          });
-        }
+        // Skip figure detection to avoid database constraint errors
+        // Figures can be extracted separately if needed
       }
 
       // Create chunks from spans (group by semantic sections)
@@ -247,29 +228,8 @@ serve(async (req) => {
       throw chunksError;
     }
 
-    // Insert figures
-    if (figures.length > 0) {
-      console.log(`Inserting ${figures.length} figures...`);
-      const { error: figuresError } = await supabaseService
-        .from("manual_figures")
-        .insert(figures);
-
-      if (figuresError) {
-        console.error("Error inserting figures:", figuresError);
-      }
-    }
-
-    // Insert tables
-    if (tables.length > 0) {
-      console.log(`Inserting ${tables.length} tables...`);
-      const { error: tablesError } = await supabaseService
-        .from("manual_tables")
-        .insert(tables);
-
-      if (tablesError) {
-        console.error("Error inserting tables:", tablesError);
-      }
-    }
+    // Skip figure and table insertion for now to avoid errors
+    // These can be processed separately if needed
 
     // Update manual with metadata
     const { error: updateError } = await supabaseService
