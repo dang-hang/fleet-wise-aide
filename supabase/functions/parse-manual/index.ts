@@ -1,9 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
-
-// Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.worker.mjs";
+import { getDocument } from "https://esm.sh/pdfjs-serverless@0.3.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,11 +99,10 @@ serve(async (req) => {
     const tables: Array<any> = [];
 
     if (manual.file_type === "application/pdf") {
-      console.log("PDF detected - parsing with pdfjs-dist");
+      console.log("PDF detected - parsing with pdfjs-serverless");
       
-      // Parse PDF with pdfjs-dist
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-      const pdfDoc = await loadingTask.promise;
+      // Parse PDF with pdfjs-serverless (designed for server-side/Deno)
+      const pdfDoc = await getDocument(new Uint8Array(arrayBuffer)).promise;
       totalPages = pdfDoc.numPages;
       console.log(`PDF has ${totalPages} pages, extracting text...`);
       
