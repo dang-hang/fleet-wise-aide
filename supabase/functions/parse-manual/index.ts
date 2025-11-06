@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import pdf from "https://esm.sh/pdf-parse@1.1.1";
+import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,47 +99,41 @@ serve(async (req) => {
     const tables: Array<any> = [];
 
     if (manual.file_type === "application/pdf") {
-      console.log("PDF detected - parsing with pdf-parse");
+      console.log("PDF detected - parsing with pdfjs-dist");
       
-      // Parse PDF
-      const pdfData = await pdf(arrayBuffer);
-      totalPages = pdfData.numpages;
+      // Parse PDF with pdfjs-dist
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdfDoc = await loadingTask.promise;
+      totalPages = pdfDoc.numPages;
       console.log(`PDF has ${totalPages} pages, extracting text...`);
       
-      // Extract text content and create spans
-      const fullText = pdfData.text;
-      const lines = fullText.split('\n').filter(line => line.trim().length > 0);
-      
-      // Estimate page breaks (pdf-parse doesn't give us page info directly)
-      const linesPerPage = Math.ceil(lines.length / totalPages);
-      
+      // Extract text from each page
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        const startIdx = (pageNum - 1) * linesPerPage;
-        const endIdx = Math.min(pageNum * linesPerPage, lines.length);
-        const pageLines = lines.slice(startIdx, endIdx);
+        const page = await pdfDoc.getPage(pageNum);
+        const textContent = await page.getTextContent();
         
-        // Create spans from lines
-        pageLines.forEach((line, idx) => {
-          if (line.trim().length > 0) {
+        // Create spans from text items
+        textContent.items.forEach((item: any) => {
+          if (item.str && item.str.trim().length > 0) {
             spans.push({
               manual_id: manualId,
               page_number: pageNum,
-              text: line.trim(),
-              bbox: { 
-                x0: 50, 
-                y0: 50 + (idx * 20), 
-                x1: 550, 
-                y1: 70 + (idx * 20) 
-              },
-              font_name: "Default",
-              font_size: 12.0
+              text: item.str.trim(),
+              bbox: item.transform ? {
+                x0: item.transform[4],
+                y0: item.transform[5],
+                x1: item.transform[4] + item.width,
+                y1: item.transform[5] + item.height
+              } : { x0: 0, y0: 0, x1: 0, y1: 0 },
+              font_name: item.fontName || "Default",
+              font_size: item.height || 12.0
             });
           }
         });
         
         // Check for diagram keywords to create figure placeholders
-        const pageText = pageLines.join(' ').toLowerCase();
-        const figureKeywords = ['figure', 'diagram', 'illustration', 'image', 'fig.', 'schematic'];
+        const pageText = textContent.items.map((i: any) => i.str).join(' ').toLowerCase();
+        const figureKeywords = ['figure', 'diagram', 'illustration', 'image', 'fig.', 'schematic', 'coolant', 'engine', 'component'];
         const hasFigure = figureKeywords.some(kw => pageText.includes(kw));
         
         if (hasFigure) {
@@ -148,8 +142,8 @@ serve(async (req) => {
             page_number: pageNum,
             figure_index: 0,
             bbox: { x0: 100, y0: 200, x1: 500, y1: 500 },
-            storage_path: null, // No actual image extracted yet
-            caption: pageText.match(/(figure|fig\.|diagram|schematic)\s+[\d.]+[^\n.]*/i)?.[0] || `Diagram on page ${pageNum}`
+            storage_path: null,
+            caption: pageText.match(/(figure|fig\.|diagram|schematic|illustration)\s+[\d.]+[^\n.]*/i)?.[0] || `Diagram on page ${pageNum}`
           });
         }
       }
