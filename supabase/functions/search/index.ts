@@ -29,7 +29,6 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -68,37 +67,29 @@ serve(async (req) => {
 
     console.log("Searching for:", query, "in manual:", manualId || "all");
 
-    // Generate embedding for the query using Lovable AI
-    const embeddingResponse = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        input: query,
-        model: "google/gemini-2.5-flash"
-      }),
-    });
+    // Use full-text search on manual_chunks content
+    let queryBuilder = supabase
+      .from("manual_chunks")
+      .select(`
+        id,
+        content,
+        metadata,
+        manual_id,
+        span_ids,
+        manuals!inner(user_id, title, vehicle_type, vehicle_model)
+      `)
+      .eq("manuals.user_id", user.id)
+      .textSearch("content", query.split(/\s+/).join(" | "), {
+        type: "websearch",
+        config: "english"
+      })
+      .limit(topK);
 
-    if (!embeddingResponse.ok) {
-      const errorText = await embeddingResponse.text();
-      console.error("Embedding API error:", embeddingResponse.status, errorText);
-      throw new Error("Failed to generate query embedding");
+    if (manualId) {
+      queryBuilder = queryBuilder.eq("manual_id", manualId);
     }
 
-    const embeddingData = await embeddingResponse.json();
-    const queryEmbedding = embeddingData.data[0].embedding;
-
-    console.log("Generated embedding, dimensions:", queryEmbedding.length);
-
-    // Search using match_chunks function
-    const { data: matchedChunks, error: searchError } = await supabase
-      .rpc("match_chunks", {
-        query_embedding: queryEmbedding,
-        match_count: topK,
-        manual_filter: manualId || null
-      });
+    const { data: matchedChunks, error: searchError } = await queryBuilder;
 
     if (searchError) {
       console.error("Search error:", searchError);
@@ -151,21 +142,19 @@ serve(async (req) => {
           .eq("manual_id", chunk.manual_id)
           .in("page_number", pageNumbers.length > 0 ? pageNumbers : [0]);
 
-        // Get manual info
-        const { data: manual } = await supabase
-          .from("manuals")
-          .select("title, vehicle_type, vehicle_model")
-          .eq("id", chunk.manual_id)
-          .single();
-
         return {
           chunk: {
             id: chunk.id,
             content: chunk.content,
-            similarity: chunk.similarity,
+            similarity: 1.0, // Full-text search doesn't provide similarity score
             metadata: chunk.metadata
           },
-          manual: manual || null,
+          manual: {
+            id: chunk.manual_id,
+            title: chunk.manuals.title,
+            vehicle_type: chunk.manuals.vehicle_type,
+            vehicle_model: chunk.manuals.vehicle_model
+          },
           spans: spans || [],
           figures: figuresWithUrls,
           tables: tables || [],
