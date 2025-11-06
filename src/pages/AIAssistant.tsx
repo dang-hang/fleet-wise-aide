@@ -29,6 +29,8 @@ interface Citation {
   bbox?: { x1: number; y1: number; x2: number; y2: number };
   snippet?: string;
   manualTitle?: string;
+  figureUrl?: string;
+  isFigure?: boolean;
 }
 
 interface Message {
@@ -688,40 +690,60 @@ const AIAssistant = () => {
                             </DrawerHeader>
                             <div className="max-h-[400px] overflow-y-auto px-4">
                               <div className="space-y-4 pb-4">
-                                {Object.entries(citations).map(([key, citation]) => (
+                                 {Object.entries(citations).map(([key, citation]) => (
                                   <Card key={key} className="p-4">
-                                    <div className="flex items-start justify-between gap-4">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-2">
+                                    {citation.isFigure && citation.figureUrl ? (
+                                      <div>
+                                        <div className="flex items-center gap-2 mb-3">
                                           <Badge variant="secondary">{key}</Badge>
-                                          <span className="text-sm text-muted-foreground">
-                                            Page {citation.page}
-                                          </span>
+                                          <span className="text-xs text-muted-foreground">Figure</span>
                                         </div>
                                         {citation.manualTitle && (
                                           <p className="text-sm font-medium mb-2">{citation.manualTitle}</p>
                                         )}
+                                        <img 
+                                          src={citation.figureUrl}
+                                          alt={citation.snippet || "Diagram"}
+                                          className="w-full rounded-lg border mb-2"
+                                        />
                                         {citation.snippet && (
-                                          <p className="text-sm text-muted-foreground line-clamp-3">
-                                            {citation.snippet}
-                                          </p>
+                                          <p className="text-sm text-muted-foreground">{citation.snippet}</p>
                                         )}
                                       </div>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => {
-                                          let url = `/manual/${citation.manualId}?page=${citation.page}`;
-                                          if (citation.bbox) {
-                                            url += `&x1=${citation.bbox.x1}&y1=${citation.bbox.y1}&x2=${citation.bbox.x2}&y2=${citation.bbox.y2}`;
-                                          }
-                                          navigate(url);
-                                        }}
-                                      >
-                                        Open
-                                      </Button>
-                                    </div>
+                                    ) : (
+                                      <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <Badge variant="secondary">{key}</Badge>
+                                            <span className="text-sm text-muted-foreground">
+                                              Page {citation.page}
+                                            </span>
+                                          </div>
+                                          {citation.manualTitle && (
+                                            <p className="text-sm font-medium mb-2">{citation.manualTitle}</p>
+                                          )}
+                                          {citation.snippet && (
+                                            <p className="text-sm text-muted-foreground line-clamp-3">
+                                              {citation.snippet}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => {
+                                            let url = `/manual/${citation.manualId}?page=${citation.page}`;
+                                            if (citation.bbox) {
+                                              url += `&x1=${citation.bbox.x1}&y1=${citation.bbox.y1}&x2=${citation.bbox.x2}&y2=${citation.bbox.y2}`;
+                                            }
+                                            navigate(url);
+                                          }}
+                                        >
+                                          Open
+                                        </Button>
+                                      </div>
+                                    )}
                                   </Card>
-                                ))}
+                                 ))}
                               </div>
                             </div>
                           </DrawerContent>

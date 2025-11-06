@@ -127,6 +127,23 @@ serve(async (req) => {
           .eq("manual_id", chunk.manual_id)
           .in("page_number", pageNumbers.length > 0 ? pageNumbers : [0]);
 
+        // Generate signed URLs for figures that have storage paths
+        const figuresWithUrls = await Promise.all(
+          (figures || []).map(async (figure: any) => {
+            if (figure.storage_path) {
+              const { data: signedUrlData } = await supabase.storage
+                .from("manuals")
+                .createSignedUrl(figure.storage_path, 3600); // 1 hour expiry
+              
+              return {
+                ...figure,
+                signed_url: signedUrlData?.signedUrl || null
+              };
+            }
+            return figure;
+          })
+        );
+
         // Fetch tables on those pages
         const { data: tables } = await supabase
           .from("manual_tables")
@@ -150,7 +167,7 @@ serve(async (req) => {
           },
           manual: manual || null,
           spans: spans || [],
-          figures: figures || [],
+          figures: figuresWithUrls,
           tables: tables || [],
           pageNumbers
         };

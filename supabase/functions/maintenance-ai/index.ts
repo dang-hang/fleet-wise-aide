@@ -104,9 +104,33 @@ serve(async (req) => {
         ragContext += `\nSimilarity: ${(citation.similarity * 100).toFixed(1)}%\n`;
         ragContext += `${citation.content}\n`;
         
-        // Add figures if present
+        // Add figures if present with signed URLs
         if (citation.figures.length > 0) {
-          ragContext += `\nFigures: ${citation.figures.map((f: any) => f.caption || `Figure ${f.figure_index}`).join(", ")}\n`;
+          ragContext += `\n📊 AVAILABLE DIAGRAMS on these pages:\n`;
+          citation.figures.forEach((f: any, figIdx: number) => {
+            const figLabel = `FIG_${citationId}_${figIdx}`;
+            ragContext += `- [${figLabel}] ${f.caption || `Diagram on page ${f.page_number}`}\n`;
+            
+            // Add figure as separate citation if it has a signed URL
+            if (f.signed_url) {
+              citations.push({
+                citationId: figLabel,
+                manualId: citation.manualId,
+                manualTitle: citation.manualTitle,
+                vehicleType: citation.vehicleType,
+                vehicleModel: citation.vehicleModel,
+                content: f.caption || `Diagram on page ${f.page_number}`,
+                pageNumbers: [f.page_number],
+                similarity: 1.0,
+                spans: [],
+                figures: [f],
+                tables: [],
+                isFigure: true,
+                figureUrl: f.signed_url
+              });
+            }
+          });
+          ragContext += `INSTRUCTION: When users ask to see a diagram, reference it by its label (e.g., "[FIG_c1_0]") to display it.\n`;
         }
         
         // Add tables if present

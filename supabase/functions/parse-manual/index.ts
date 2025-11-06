@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import pdf from "https://esm.sh/pdf-parse@1.1.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -98,70 +99,139 @@ serve(async (req) => {
     const tables: Array<any> = [];
 
     if (manual.file_type === "application/pdf") {
-      // STUB: Simulate PDF parsing
-      // In production, extract actual text spans with bounding boxes
-      console.log("PDF detected - using stub parser");
+      console.log("PDF detected - parsing with pdf-parse");
       
-      totalPages = 5; // Stub: assume 5 pages
+      // Parse PDF
+      const pdfData = await pdf(arrayBuffer);
+      totalPages = pdfData.numpages;
+      console.log(`PDF has ${totalPages} pages, extracting text...`);
       
-      // Create stub spans for each page
+      // Extract text content and create spans
+      const fullText = pdfData.text;
+      const lines = fullText.split('\n').filter(line => line.trim().length > 0);
+      
+      // Estimate page breaks (pdf-parse doesn't give us page info directly)
+      const linesPerPage = Math.ceil(lines.length / totalPages);
+      
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        // Stub: Create 10 text spans per page
-        for (let i = 0; i < 10; i++) {
-          spans.push({
-            manual_id: manualId,
-            page_number: pageNum,
-            text: `Sample text span ${i + 1} on page ${pageNum}`,
-            bbox: { x0: 50 + i * 20, y0: 50 + i * 30, x1: 200 + i * 20, y1: 70 + i * 30 },
-            font_name: "Helvetica",
-            font_size: 12.0
-          });
-        }
-
-        // Stub: Create one figure per page
-        figures.push({
-          manual_id: manualId,
-          page_number: pageNum,
-          figure_index: 0,
-          bbox: { x0: 300, y0: 100, x1: 500, y1: 300 },
-          storage_path: `${manualId}/figures/${pageNum}_0.png`,
-          caption: `Figure ${pageNum}.1 - Sample diagram`
-        });
-
-        // Stub: Create one table per page
-        tables.push({
-          manual_id: manualId,
-          page_number: pageNum,
-          table_index: 0,
-          bbox: { x0: 50, y0: 400, x1: 550, y1: 550 },
-          data: {
-            headers: ["Column 1", "Column 2", "Column 3"],
-            rows: [
-              ["Data 1.1", "Data 1.2", "Data 1.3"],
-              ["Data 2.1", "Data 2.2", "Data 2.3"]
-            ]
-          },
-          caption: `Table ${pageNum}.1 - Sample data`
-        });
-      }
-
-      // Create chunks from spans (group every 20 spans)
-      const spanGroups: Array<any[]> = [];
-      for (let i = 0; i < spans.length; i += 20) {
-        spanGroups.push(spans.slice(i, i + 20));
-      }
-
-      for (const spanGroup of spanGroups) {
-        const content = spanGroup.map(s => s.text).join(" ");
-        chunks.push({
-          manual_id: manualId,
-          content,
-          span_ids: [], // Will be populated after spans are inserted
-          metadata: {
-            page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
-            char_count: content.length
+        const startIdx = (pageNum - 1) * linesPerPage;
+        const endIdx = Math.min(pageNum * linesPerPage, lines.length);
+        const pageLines = lines.slice(startIdx, endIdx);
+        
+        // Create spans from lines
+        pageLines.forEach((line, idx) => {
+          if (line.trim().length > 0) {
+            spans.push({
+              manual_id: manualId,
+              page_number: pageNum,
+              text: line.trim(),
+              bbox: { 
+                x0: 50, 
+                y0: 50 + (idx * 20), 
+                x1: 550, 
+                y1: 70 + (idx * 20) 
+              },
+              font_name: "Default",
+              font_size: 12.0
+            });
           }
         });
+        
+        // Check for diagram keywords to create figure placeholders
+        const pageText = pageLines.join(' ').toLowerCase();
+        const figureKeywords = ['figure', 'diagram', 'illustration', 'image', 'fig.', 'schematic'];
+        const hasFigure = figureKeywords.some(kw => pageText.includes(kw));
+        
+        if (hasFigure) {
+          figures.push({
+            manual_id: manualId,
+            page_number: pageNum,
+            figure_index: 0,
+            bbox: { x0: 100, y0: 200, x1: 500, y1: 500 },
+            storage_path: null, // No actual image extracted yet
+            caption: pageText.match(/(figure|fig\.|diagram|schematic)\s+[\d.]+[^\n.]*/i)?.[0] || `Diagram on page ${pageNum}`
+          });
+        }
+      }
+
+      // Create chunks from spans (group by semantic sections)
+      const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+      const spanGroups: Array<any[]> = [];
+      
+      // Group spans by page, then by every 15 spans for reasonable chunk size
+      const spansByPage: { [key: number]: any[] } = {};
+      spans.forEach(span => {
+        if (!spansByPage[span.page_number]) {
+          spansByPage[span.page_number] = [];
+        }
+        spansByPage[span.page_number].push(span);
+      });
+
+      for (const pageNum in spansByPage) {
+        const pageSpans = spansByPage[pageNum];
+        for (let i = 0; i < pageSpans.length; i += 15) {
+          spanGroups.push(pageSpans.slice(i, i + 15));
+        }
+      }
+
+      // Generate embeddings and create chunks
+      console.log(`Generating embeddings for ${spanGroups.length} chunks...`);
+      for (const spanGroup of spanGroups) {
+        const content = spanGroup.map(s => s.text).join(" ");
+        
+        // Generate embedding using Lovable AI
+        try {
+          const embeddingResponse = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${lovableApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              input: content,
+              model: "google/gemini-2.5-flash"
+            }),
+          });
+
+          if (embeddingResponse.ok) {
+            const embeddingData = await embeddingResponse.json();
+            const embedding = embeddingData.data[0].embedding;
+            
+            chunks.push({
+              manual_id: manualId,
+              content,
+              embedding, // Include the embedding vector
+              span_ids: [], // Will be populated after spans are inserted
+              metadata: {
+                page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
+                char_count: content.length
+              }
+            });
+          } else {
+            console.warn("Failed to generate embedding, creating chunk without embedding");
+            chunks.push({
+              manual_id: manualId,
+              content,
+              span_ids: [],
+              metadata: {
+                page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
+                char_count: content.length
+              }
+            });
+          }
+        } catch (embError) {
+          console.error("Error generating embedding:", embError);
+          // Create chunk without embedding
+          chunks.push({
+            manual_id: manualId,
+            content,
+            span_ids: [],
+            metadata: {
+              page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
+              char_count: content.length
+            }
+          });
+        }
       }
     } else {
       // For non-PDF files, create simple content
