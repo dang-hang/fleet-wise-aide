@@ -164,6 +164,7 @@ const AIAssistant = () => {
       const decoder = new TextDecoder();
       let fullDiagnostic = "";
       let accumulatedCitations: Record<string, Citation> = {};
+      let textBuffer = "";
 
       // Add user message to chat
       setMessages([...initialMessages]);
@@ -173,36 +174,59 @@ const AIAssistant = () => {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
+          textBuffer += decoder.decode(value, { stream: true });
           
-          // Check if chunk contains citations JSON
-          if (chunk.includes('{"citations":{')) {
+          // Process line by line
+          let newlineIndex: number;
+          while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+            let line = textBuffer.slice(0, newlineIndex);
+            textBuffer = textBuffer.slice(newlineIndex + 1);
+
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (line.startsWith(":") || line.trim() === "") continue;
+            if (!line.startsWith("data: ")) continue;
+
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === "[DONE]") break;
+            
+            // Check for citations
+            if (jsonStr.includes('"citations"')) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.citations) {
+                  accumulatedCitations = parsed.citations;
+                  continue;
+                }
+              } catch (e) {
+                // Not citations JSON
+              }
+            }
+
             try {
-              const citationsJson = chunk.match(/\{"citations":\{.*\}\}/)?.[0];
-              if (citationsJson) {
-                const parsed = JSON.parse(citationsJson);
-                accumulatedCitations = parsed.citations || {};
-                continue; // Don't add citations JSON to content
+              const parsed = JSON.parse(jsonStr);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                fullDiagnostic += content;
+                
+                // Update assistant message in real-time
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMsg = newMessages[newMessages.length - 1];
+                  if (lastMsg?.role === 'assistant') {
+                    lastMsg.content = fullDiagnostic;
+                    lastMsg.citations = accumulatedCitations;
+                  } else {
+                    newMessages.push({ role: 'assistant', content: fullDiagnostic, citations: accumulatedCitations });
+                  }
+                  return newMessages;
+                });
               }
             } catch (e) {
-              // Not valid JSON, treat as regular content
+              // Incomplete JSON, will be completed in next chunk
+              textBuffer = line + "\n" + textBuffer;
+              break;
             }
           }
-          
-          fullDiagnostic += chunk;
-          
-          // Update assistant message in real-time
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMsg = newMessages[newMessages.length - 1];
-            if (lastMsg?.role === 'assistant') {
-              lastMsg.content = fullDiagnostic;
-              lastMsg.citations = accumulatedCitations;
-            } else {
-              newMessages.push({ role: 'assistant', content: fullDiagnostic, citations: accumulatedCitations });
-            }
-            return newMessages;
-          });
         }
       }
       
@@ -298,41 +322,65 @@ const AIAssistant = () => {
       const decoder = new TextDecoder();
       let assistantResponse = "";
       let accumulatedCitations: Record<string, Citation> = {};
+      let textBuffer = "";
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
+          textBuffer += decoder.decode(value, { stream: true });
           
-          // Check if chunk contains citations JSON
-          if (chunk.includes('{"citations":{')) {
+          // Process line by line
+          let newlineIndex: number;
+          while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+            let line = textBuffer.slice(0, newlineIndex);
+            textBuffer = textBuffer.slice(newlineIndex + 1);
+
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (line.startsWith(":") || line.trim() === "") continue;
+            if (!line.startsWith("data: ")) continue;
+
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === "[DONE]") break;
+            
+            // Check for citations
+            if (jsonStr.includes('"citations"')) {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.citations) {
+                  accumulatedCitations = parsed.citations;
+                  continue;
+                }
+              } catch (e) {
+                // Not citations JSON
+              }
+            }
+
             try {
-              const citationsJson = chunk.match(/\{"citations":\{.*\}\}/)?.[0];
-              if (citationsJson) {
-                const parsed = JSON.parse(citationsJson);
-                accumulatedCitations = parsed.citations || {};
-                continue; // Don't add citations JSON to content
+              const parsed = JSON.parse(jsonStr);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                assistantResponse += content;
+                
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMsg = newMessages[newMessages.length - 1];
+                  if (lastMsg?.role === 'assistant') {
+                    lastMsg.content = assistantResponse;
+                    lastMsg.citations = accumulatedCitations;
+                  } else {
+                    newMessages.push({ role: 'assistant', content: assistantResponse, citations: accumulatedCitations });
+                  }
+                  return newMessages;
+                });
               }
             } catch (e) {
-              // Not valid JSON, treat as regular content
+              // Incomplete JSON, will be completed in next chunk
+              textBuffer = line + "\n" + textBuffer;
+              break;
             }
           }
-          
-          assistantResponse += chunk;
-          
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMsg = newMessages[newMessages.length - 1];
-            if (lastMsg?.role === 'assistant') {
-              lastMsg.content = assistantResponse;
-              lastMsg.citations = accumulatedCitations;
-            } else {
-              newMessages.push({ role: 'assistant', content: assistantResponse, citations: accumulatedCitations });
-            }
-            return newMessages;
-          });
         }
       }
       
