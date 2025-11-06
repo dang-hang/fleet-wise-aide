@@ -167,64 +167,19 @@ serve(async (req) => {
         }
       }
 
-      // Generate embeddings and create chunks
-      console.log(`Generating embeddings for ${spanGroups.length} chunks...`);
+      // Create chunks without embeddings (embeddings can be generated later)
+      console.log(`Creating ${spanGroups.length} chunks without embeddings for faster processing...`);
       for (const spanGroup of spanGroups) {
         const content = spanGroup.map(s => s.text).join(" ");
-        
-        // Generate embedding using Lovable AI
-        try {
-          const embeddingResponse = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${lovableApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              input: content,
-              model: "google/gemini-2.5-flash"
-            }),
-          });
-
-          if (embeddingResponse.ok) {
-            const embeddingData = await embeddingResponse.json();
-            const embedding = embeddingData.data[0].embedding;
-            
-            chunks.push({
-              manual_id: manualId,
-              content,
-              embedding, // Include the embedding vector
-              span_ids: [], // Will be populated after spans are inserted
-              metadata: {
-                page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
-                char_count: content.length
-              }
-            });
-          } else {
-            console.warn("Failed to generate embedding, creating chunk without embedding");
-            chunks.push({
-              manual_id: manualId,
-              content,
-              span_ids: [],
-              metadata: {
-                page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
-                char_count: content.length
-              }
-            });
+        chunks.push({
+          manual_id: manualId,
+          content,
+          span_ids: [],
+          metadata: {
+            page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
+            char_count: content.length
           }
-        } catch (embError) {
-          console.error("Error generating embedding:", embError);
-          // Create chunk without embedding
-          chunks.push({
-            manual_id: manualId,
-            content,
-            span_ids: [],
-            metadata: {
-              page_numbers: [...new Set(spanGroup.map(s => s.page_number))],
-              char_count: content.length
-            }
-          });
-        }
+        });
       }
     } else {
       // For non-PDF files, create simple content
