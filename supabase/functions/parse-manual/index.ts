@@ -104,15 +104,23 @@ serve(async (req) => {
       // Parse PDF with pdfjs-serverless (designed for server-side/Deno)
       const pdfDoc = await getDocument(new Uint8Array(arrayBuffer)).promise;
       totalPages = pdfDoc.numPages;
-      console.log(`PDF has ${totalPages} pages, extracting text...`);
+      console.log(`PDF has ${totalPages} pages`);
       
-      // Extract text from each page
-      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      // For large PDFs (>100 pages), only extract metadata initially
+      // Full text extraction can be done in batches later
+      const maxPagesToProcess = 100;
+      const pagesToProcess = Math.min(totalPages, maxPagesToProcess);
+      
+      console.log(`Extracting text from first ${pagesToProcess} pages (full parsing can be done later)...`);
+      
+      // Extract text from limited pages
+      for (let pageNum = 1; pageNum <= pagesToProcess; pageNum++) {
         const page = await pdfDoc.getPage(pageNum);
         const textContent = await page.getTextContent();
         
-        // Create spans from text items
-        textContent.items.forEach((item: any) => {
+        // Create spans from text items (limit to avoid memory issues)
+        const items = textContent.items.slice(0, 50); // Limit items per page
+        items.forEach((item: any) => {
           if (item.str && item.str.trim().length > 0) {
             spans.push({
               manual_id: manualId,
