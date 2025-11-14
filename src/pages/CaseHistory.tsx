@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Search, FileText, Calendar, Loader2, Trash2, Save } from "lucide-react";
 
@@ -128,6 +129,37 @@ const CaseHistory = () => {
     }
   };
 
+  const handleStatusChange = async (newStatus: string) => {
+    if (!selectedCase) return;
+
+    try {
+      const { error } = await supabase
+        .from('cases')
+        .update({ status: newStatus })
+        .eq('id', selectedCase.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setCases(cases.map(c => 
+        c.id === selectedCase.id ? { ...c, status: newStatus } : c
+      ));
+      setSelectedCase({ ...selectedCase, status: newStatus });
+
+      toast({
+        title: "Status Updated",
+        description: `Case status changed to ${newStatus}`,
+      });
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update case status",
+        variant: "destructive",
+      });
+    }
+  };
+
   useEffect(() => {
     if (selectedCase) {
       setNotes(selectedCase.notes || "");
@@ -210,17 +242,28 @@ const CaseHistory = () => {
                       Created: {new Date(selectedCase.created_at).toLocaleDateString()}
                     </CardDescription>
                   </div>
-                  <Badge variant="outline" className={getStatusColor(selectedCase.status)}>
-                    {selectedCase.status}
-                  </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
+              <CardContent className="space-y-4">
+                <div className="flex gap-2 flex-wrap">
                   {selectedCase.category && <Badge variant="secondary">{selectedCase.category}</Badge>}
                   <Badge variant="outline">
                     {`${selectedCase.vehicle_year} ${selectedCase.vehicle_make} ${selectedCase.vehicle_model}`}
                   </Badge>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="case-status">Case Status</Label>
+                  <Select value={selectedCase.status} onValueChange={handleStatusChange}>
+                    <SelectTrigger id="case-status" className="max-w-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="In Progress">In Progress</SelectItem>
+                      <SelectItem value="On Hold">On Hold</SelectItem>
+                      <SelectItem value="Completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
