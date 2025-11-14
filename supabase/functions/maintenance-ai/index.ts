@@ -154,12 +154,13 @@ serve(async (req) => {
 - Common issues with police vehicles (Crown Victoria, Tahoe, Charger, F-150, Silverado, Explorer)
 
 CRITICAL INSTRUCTIONS:
-1. Use ONLY the information provided in the manual excerpts below
-2. When referencing information, cite using citation markers: {{c1}}, {{c2}}, etc.
-3. Place citation markers immediately after the relevant statement
+1. PRIORITIZE information from the manual excerpts below when available
+2. When using manual information, ALWAYS cite using citation markers: {{c1}}, {{c2}}, etc.
+3. Place citation markers immediately after relevant statements from manuals
 4. You may use multiple citations for a single statement if applicable
-5. Do NOT make up information not present in the excerpts
-6. If the excerpts don't contain enough information, say so explicitly
+5. If manual excerpts don't contain the answer, you MAY use your general automotive knowledge
+6. When using general knowledge (not from manuals), clearly state: "Based on general automotive knowledge:"
+7. NEVER claim general knowledge comes from the manuals - only cite what's actually in the excerpts
 
 ${ragContext}
 
