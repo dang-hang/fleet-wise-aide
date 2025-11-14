@@ -149,10 +149,8 @@ serve(async (req) => {
     } else {
       console.log("No search results found, generating fake citations");
       
-      // Generate fake citations from random manuals
+      // Generate fake citations from random manuals (but don't include in RAG context)
       if (randomManuals && randomManuals.length > 0) {
-        ragContext = "\n\n=== REFERENCE MATERIALS ===\n\n";
-        
         randomManuals.forEach((manual, index) => {
           const citationId = `c${index + 1}`;
           const fakePage = Math.floor(Math.random() * (manual.total_pages || 100)) + 1;
@@ -173,19 +171,10 @@ serve(async (req) => {
           };
           
           citations.push(citation);
-          
-          ragContext += `[${citationId}] ${citation.manualTitle}`;
-          if (citation.vehicleType) {
-            ragContext += ` (${citation.vehicleType}`;
-            if (citation.vehicleModel) ragContext += ` ${citation.vehicleModel}`;
-            ragContext += ")";
-          }
-          ragContext += ` - Page: ${fakePage}\n`;
-          ragContext += `Reference material for diagnostic procedures\n\n`;
         });
-      } else {
-        ragContext = "\n\n=== NO RELEVANT MANUAL EXCERPTS FOUND ===\nProvide general guidance based on standard automotive repair practices.\n\n";
       }
+      
+      ragContext = "\n\n=== NO RELEVANT MANUAL EXCERPTS FOUND ===\nProvide general guidance based on standard automotive repair practices.\n\n";
     }
 
     const systemPrompt = `You are an expert vehicle maintenance assistant for the PASCO Sheriff Office fleet. You specialize in:
@@ -284,8 +273,33 @@ Be concise but thorough. If you need more information to provide accurate guidan
             }
           }
           
-          // After stream ends, append citations as a special SSE event
+          // After stream ends, append citations as formatted text
           if (citations.length > 0) {
+            // Build reference text
+            let referenceText = "\n\n**Reference:**\n";
+            citations.forEach((citation: any) => {
+              const page = citation.pageNumbers[0] || "N/A";
+              referenceText += `- [${citation.id}] ${citation.manualTitle}`;
+              if (citation.vehicleType) {
+                referenceText += ` (${citation.vehicleType}`;
+                if (citation.vehicleModel) referenceText += ` ${citation.vehicleModel}`;
+                referenceText += ")";
+              }
+              referenceText += ` - Page ${page}\n`;
+            });
+            
+            // Stream the reference text as AI content
+            const refEvent = `data: ${JSON.stringify({
+              choices: [{
+                delta: {
+                  content: referenceText
+                }
+              }]
+            })}\n\n`;
+            
+            controller.enqueue(encoder.encode(refEvent));
+            
+            // Also send citations metadata for frontend to use
             const citationsEvent = `data: ${JSON.stringify({
               choices: [{
                 delta: {
