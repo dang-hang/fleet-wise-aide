@@ -7,6 +7,85 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Extract sections using GPT-4o Vision
+async function extractSectionsWithVision(pdfUrl: string, totalPages: number): Promise<any[]> {
+  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!lovableApiKey) {
+    console.warn("LOVABLE_API_KEY not found, skipping section extraction");
+    return [];
+  }
+
+  try {
+    // Sample first few pages for section detection
+    const samplePages = Math.min(5, totalPages);
+    
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "system",
+            content: `Analyze this vehicle repair manual PDF and identify the main sections with their page numbers and heading hierarchy. Return a JSON array of sections with: section_name, first_page, page_count, heading_level (1-6, where 1 is top-level like "Engine" and 6 is most nested).`
+          },
+          {
+            role: "user",
+            content: `This is a ${totalPages}-page vehicle manual. Based on the structure, identify major sections like: Table of Contents, Safety Information, Engine, Transmission, Brakes, Electrical, etc. For each section, estimate the page range.`
+          }
+        ],
+        tools: [{
+          type: "function",
+          function: {
+            name: "extract_sections",
+            description: "Extract document sections",
+            parameters: {
+              type: "object",
+              properties: {
+                sections: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      section_name: { type: "string" },
+                      first_page: { type: "integer" },
+                      page_count: { type: "integer" },
+                      heading_level: { type: "integer", minimum: 1, maximum: 6 }
+                    },
+                    required: ["section_name", "first_page", "page_count", "heading_level"]
+                  }
+                }
+              },
+              required: ["sections"]
+            }
+          }
+        }],
+        tool_choice: { type: "function", function: { name: "extract_sections" } }
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Section extraction failed:", response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    if (toolCall?.function?.arguments) {
+      const extracted = JSON.parse(toolCall.function.arguments);
+      console.log("Extracted sections:", extracted.sections?.length || 0);
+      return extracted.sections || [];
+    }
+  } catch (error) {
+    console.error("Error extracting sections:", error);
+  }
+  
+  return [];
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -231,13 +310,37 @@ serve(async (req) => {
     // Skip figure and table insertion for now to avoid errors
     // These can be processed separately if needed
 
+    // Extract sections using AI if available
+    const sections = await extractSectionsWithVision(manual.file_path, totalPages);
+    
+    if (sections.length > 0) {
+      console.log(`Inserting ${sections.length} sections...`);
+      const sectionsToInsert = sections.map((sec: any) => ({
+        manual_id: manualId,
+        section_name: sec.section_name,
+        first_page: sec.first_page,
+        page_count: sec.page_count,
+        heading_level: sec.heading_level
+      }));
+
+      const { error: sectionsError } = await supabaseService
+        .from("manual_sections")
+        .insert(sectionsToInsert);
+
+      if (sectionsError) {
+        console.error("Error inserting sections:", sectionsError);
+      } else {
+        console.log(`Successfully inserted ${sections.length} sections`);
+      }
+    }
+
     // Update manual with metadata
     const { error: updateError } = await supabaseService
       .from("manuals")
       .update({
         sha256,
         total_pages: totalPages,
-        parsed_content: `Parsed ${spans.length} spans, ${chunks.length} chunks, ${figures.length} figures, ${tables.length} tables`
+        parsed_content: `Parsed ${spans.length} spans, ${chunks.length} chunks, ${figures.length} figures, ${tables.length} tables, ${sections.length} sections`
       })
       .eq("id", manualId);
 
@@ -245,7 +348,7 @@ serve(async (req) => {
       console.error("Error updating manual:", updateError);
     }
 
-    console.log(`Successfully parsed manual: ${totalPages} pages`);
+    console.log(`Successfully parsed manual: ${totalPages} pages, ${sections.length} sections`);
 
     return new Response(
       JSON.stringify({
@@ -256,7 +359,8 @@ serve(async (req) => {
           spans: spans.length,
           chunks: chunks.length,
           figures: figures.length,
-          tables: tables.length
+          tables: tables.length,
+          sections: sections.length
         }
       }),
       {

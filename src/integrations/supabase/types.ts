@@ -176,6 +176,54 @@ export type Database = {
           },
         ]
       }
+      manual_sections: {
+        Row: {
+          created_at: string | null
+          first_page: number
+          heading_level: number
+          id: string
+          manual_id: string
+          page_count: number
+          parent_section_id: string | null
+          section_name: string
+        }
+        Insert: {
+          created_at?: string | null
+          first_page: number
+          heading_level?: number
+          id?: string
+          manual_id: string
+          page_count: number
+          parent_section_id?: string | null
+          section_name: string
+        }
+        Update: {
+          created_at?: string | null
+          first_page?: number
+          heading_level?: number
+          id?: string
+          manual_id?: string
+          page_count?: number
+          parent_section_id?: string | null
+          section_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_sections_manual_id_fkey"
+            columns: ["manual_id"]
+            isOneToOne: false
+            referencedRelation: "manuals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_sections_parent_section_id_fkey"
+            columns: ["parent_section_id"]
+            isOneToOne: false
+            referencedRelation: "manual_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manual_spans: {
         Row: {
           bbox: Json
@@ -271,8 +319,10 @@ export type Database = {
           total_pages: number | null
           updated_at: string
           user_id: string
+          vehicle_make: string | null
           vehicle_model: string | null
           vehicle_type: string
+          vehicle_year: string | null
           year_range: string | null
         }
         Insert: {
@@ -287,8 +337,10 @@ export type Database = {
           total_pages?: number | null
           updated_at?: string
           user_id: string
+          vehicle_make?: string | null
           vehicle_model?: string | null
           vehicle_type: string
+          vehicle_year?: string | null
           year_range?: string | null
         }
         Update: {
@@ -303,8 +355,10 @@ export type Database = {
           total_pages?: number | null
           updated_at?: string
           user_id?: string
+          vehicle_make?: string | null
           vehicle_model?: string | null
           vehicle_type?: string
+          vehicle_year?: string | null
           year_range?: string | null
         }
         Relationships: []

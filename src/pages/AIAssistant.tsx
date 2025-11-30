@@ -117,10 +117,11 @@ const AIAssistant = () => {
   };
 
   const handleContinue = async () => {
-    if (!vehicleYear || !vehicleMake || !vehicleModel || !problemDescription.trim()) {
+    // Vehicle info is now optional - auto-detection will handle it
+    if (!problemDescription.trim()) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all fields before continuing",
+        description: "Please describe the problem you're experiencing",
         variant: "destructive",
       });
       return;
@@ -135,8 +136,11 @@ const AIAssistant = () => {
         return;
       }
 
-      // Create initial user message
-      const initialPrompt = `Vehicle: ${vehicleYear} ${vehicleMake} ${vehicleModel}\nProblem: ${problemDescription}`;
+      // Create initial user message - include vehicle info if provided
+      let initialPrompt = `Problem: ${problemDescription}`;
+      if (vehicleYear && vehicleMake && vehicleModel) {
+        initialPrompt = `Vehicle: ${vehicleYear} ${vehicleMake} ${vehicleModel}\n${initialPrompt}`;
+      }
       const initialMessages = [{ role: 'user' as const, content: initialPrompt }];
       
       // Get user's session token for authentication
@@ -487,7 +491,9 @@ const AIAssistant = () => {
             <Card className="max-w-2xl mx-auto">
               <CardHeader>
                 <CardTitle>Vehicle Information & Problem Description</CardTitle>
-                <CardDescription>Fill in all fields to receive AI-powered diagnostics</CardDescription>
+                <CardDescription>
+                  Describe your vehicle problem - we'll auto-detect the vehicle from your description, or you can specify it manually
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {savedVehicles && savedVehicles.length > 0 && (
@@ -516,11 +522,15 @@ const AIAssistant = () => {
                         </Button>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Or enter vehicle details manually below
-                    </p>
                   </div>
                 )}
+                
+                <div className="space-y-3">
+                  <Label>Vehicle Details (Optional)</Label>
+                  <p className="text-sm text-muted-foreground">
+                    💡 Tip: You can mention the vehicle in your problem description (e.g., "My 2020 Ford F-150 won't start") and we'll detect it automatically
+                  </p>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
@@ -558,13 +568,17 @@ const AIAssistant = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="problem">Problem Description</Label>
+                  <Label htmlFor="problem" className="flex items-center gap-1">
+                    Problem Description
+                    <span className="text-destructive">*</span>
+                  </Label>
                   <Textarea
                     id="problem"
-                    placeholder="Describe the issue you're experiencing with the vehicle..."
+                    placeholder="Describe the issue... e.g., 'My 2019 Tahoe makes a grinding noise when braking' or 'The F-150 check engine light is on and it's running rough'"
                     value={problemDescription}
                     onChange={(e) => setProblemDescription(e.target.value)}
                     className="min-h-[150px]"
+                    required
                   />
                 </div>
 
