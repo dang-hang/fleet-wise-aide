@@ -49,11 +49,12 @@ serve(async (req) => {
     
     console.log("Searching for relevant manual content:", lastUserMessage);
 
-    // Call search function to get relevant snippets
+    // Call search function to get relevant snippets with vehicle auto-detection
     const { data: searchResults, error: searchError } = await supabase.functions.invoke("search", {
       body: { 
         query: lastUserMessage,
-        topK: 5
+        topK: 5,
+        extractVehicle: true  // Enable vehicle auto-extraction
       }
     });
 
@@ -72,37 +73,64 @@ serve(async (req) => {
     let ragContext = "";
 
     if (searchResults?.results && searchResults.results.length > 0) {
-      console.log(`Found ${searchResults.results.length} relevant chunks`);
+      console.log(`Found ${searchResults.results.length} relevant results (${searchResults.searchType})`);
       
-      ragContext = "\n\n=== RELEVANT MANUAL EXCERPTS ===\n\n";
+      // Add vehicle info if extracted
+      if (searchResults.vehicleInfo && Object.keys(searchResults.vehicleInfo).length > 0) {
+        const vehicle = searchResults.vehicleInfo;
+        ragContext = `\n\n=== DETECTED VEHICLE INFO ===\n`;
+        if (vehicle.year) ragContext += `Year: ${vehicle.year}\n`;
+        if (vehicle.make) ragContext += `Make: ${vehicle.make}\n`;
+        if (vehicle.model) ragContext += `Model: ${vehicle.model}\n`;
+        ragContext += "\n";
+      }
+      
+      ragContext += "\n=== RELEVANT MANUAL EXCERPTS ===\n\n";
       
       searchResults.results.forEach((result: any, index: number) => {
         const citationId = `c${index + 1}`;
         
+        // Handle both section-based and chunk-based results
+        const isSection = result.type === "section";
+        const content = isSection 
+          ? result.spans?.map((s: any) => s.text).join(" ").substring(0, 500)
+          : result.chunk?.content;
+        
         // Build citation entry
         const citation = {
           id: citationId,
-          chunkId: result.chunk.id,
-          manualId: result.chunk.metadata?.manual_id || result.manual?.id,
+          chunkId: result.chunk?.id || result.section?.id,
+          manualId: result.manual?.id,
           manualTitle: result.manual?.title || "Unknown Manual",
           vehicleType: result.manual?.vehicle_type || "",
           vehicleModel: result.manual?.vehicle_model || "",
-          content: result.chunk.content,
+          vehicleYear: result.manual?.vehicle_year || "",
+          vehicleMake: result.manual?.vehicle_make || "",
+          content: content,
           pageNumbers: result.pageNumbers || [],
-          similarity: result.chunk.similarity,
+          similarity: result.chunk?.similarity || 1.0,
           spans: result.spans || [],
           figures: result.figures || [],
-          tables: result.tables || []
+          tables: result.tables || [],
+          isSection: isSection,
+          sectionName: result.section?.name
         };
         
         citations.push(citation);
         
         // Add to context
         ragContext += `[${citationId}] ${citation.manualTitle}`;
-        if (citation.vehicleType) {
-          ragContext += ` (${citation.vehicleType}`;
-          if (citation.vehicleModel) ragContext += ` ${citation.vehicleModel}`;
-          ragContext += ")";
+        if (citation.vehicleYear || citation.vehicleMake || citation.vehicleType) {
+          const vehicleParts = [
+            citation.vehicleYear,
+            citation.vehicleMake,
+            citation.vehicleType,
+            citation.vehicleModel
+          ].filter(Boolean);
+          ragContext += ` (${vehicleParts.join(" ")})`;
+        }
+        if (isSection && citation.sectionName) {
+          ragContext += ` - Section: ${citation.sectionName}`;
         }
         if (citation.pageNumbers.length > 0) {
           ragContext += ` - Pages: ${citation.pageNumbers.join(", ")}`;
