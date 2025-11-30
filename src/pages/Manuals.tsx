@@ -259,18 +259,41 @@ const Manuals = () => {
         title: "Processing",
         description: "Re-processing manual with new RAG system (sections + diagrams)...",
       });
-      
-      const { error } = await supabase.functions.invoke("parse-manual", {
-        body: { manualId }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate("/auth");
+        throw new Error("You must be signed in to re-process manuals");
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-manual`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ manualId }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        let errorMessage = "Failed to re-process manual";
+        try {
+          const errorBody = await response.json();
+          if (errorBody?.error) {
+            errorMessage = errorBody.error;
+          }
+        } catch (_) {
+          // Ignore JSON parsing failures so we can fall back to the default message.
+        }
+        throw new Error(errorMessage);
+      }
 
       toast({
         title: "Success",
         description: "Manual re-processed! Now includes sections and diagrams for AI reference.",
       });
-      
+
       fetchManuals();
     } catch (error: any) {
       console.error("Error re-processing manual:", error);
