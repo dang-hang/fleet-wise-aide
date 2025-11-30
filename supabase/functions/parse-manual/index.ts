@@ -152,6 +152,15 @@ serve(async (req) => {
     // Create service client for storage and database operations that need elevated privileges
     const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Clean up old data if re-processing (delete old spans, chunks, sections, figures, tables)
+    console.log("Cleaning up old data for manual:", manualId);
+    await supabaseService.from("manual_sections").delete().eq("manual_id", manualId);
+    await supabaseService.from("manual_chunks").delete().eq("manual_id", manualId);
+    await supabaseService.from("manual_spans").delete().eq("manual_id", manualId);
+    await supabaseService.from("manual_figures").delete().eq("manual_id", manualId);
+    await supabaseService.from("manual_tables").delete().eq("manual_id", manualId);
+    console.log("Old data cleaned up");
+
     // Download file from storage using service client
     const { data: fileData, error: downloadError } = await supabaseService.storage
       .from("manuals")
@@ -211,8 +220,31 @@ serve(async (req) => {
           }
         });
         
-        // Skip figure detection to avoid database constraint errors
-        // Figures can be extracted separately if needed
+        // Detect figures (images) on the page
+        const opList = await page.getOperatorList();
+        let figureIndex = 0;
+        
+        for (let i = 0; i < opList.fnArray.length; i++) {
+          const fn = opList.fnArray[i];
+          
+          // Check for image painting operations (paintImageXObject, paintJpegXObject, etc.)
+          if (fn === 85 || fn === 88) { // OPS.paintImageXObject || OPS.paintJpegXObject
+            const args = opList.argsArray[i];
+            if (args && args.length > 0) {
+              // Extract bounding box from transform matrix (if available)
+              const bbox = { x0: 0, y0: 0, x1: 100, y1: 100 }; // Placeholder
+              
+              figures.push({
+                manual_id: manualId,
+                page_number: pageNum,
+                figure_index: figureIndex++,
+                bbox,
+                caption: `Figure ${figureIndex} on page ${pageNum}`,
+                storage_path: `${manual.file_path}/figures/page_${pageNum}_fig_${figureIndex}.png`
+              });
+            }
+          }
+        }
       }
 
       // Create chunks from spans (group by semantic sections)
