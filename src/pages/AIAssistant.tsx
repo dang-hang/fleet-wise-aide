@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, Car, FileText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
 import {
   Drawer,
   DrawerContent,
@@ -38,6 +39,17 @@ interface Message {
   content: string;
   citations?: Record<string, Citation>;
 }
+
+// Validation schemas
+const problemDescriptionSchema = z.string()
+  .trim()
+  .min(10, "Please provide more detail (at least 10 characters)")
+  .max(5000, "Description must be less than 5000 characters");
+
+const chatMessageSchema = z.string()
+  .trim()
+  .min(1, "Message cannot be empty")
+  .max(2000, "Message must be less than 2000 characters");
 
 const AIAssistant = () => {
   const navigate = useNavigate();
@@ -117,11 +129,12 @@ const AIAssistant = () => {
   };
 
   const handleContinue = async () => {
-    // Vehicle info is now optional - auto-detection will handle it
-    if (!problemDescription.trim()) {
+    // Validate problem description
+    const validation = problemDescriptionSchema.safeParse(problemDescription);
+    if (!validation.success) {
       toast({
-        title: "Missing Information",
-        description: "Please describe the problem you're experiencing",
+        title: "Invalid Input",
+        description: validation.error.errors[0].message,
         variant: "destructive",
       });
       return;
@@ -293,9 +306,20 @@ const AIAssistant = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!currentMessage.trim() || isLoading) return;
+    if (isLoading) return;
 
-    const userMessage = { role: 'user' as const, content: currentMessage };
+    // Validate chat message
+    const validation = chatMessageSchema.safeParse(currentMessage);
+    if (!validation.success) {
+      toast({
+        title: "Invalid Message",
+        description: validation.error.errors[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const userMessage = { role: 'user' as const, content: validation.data };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setCurrentMessage("");

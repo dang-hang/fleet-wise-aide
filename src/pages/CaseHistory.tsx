@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Search, FileText, Calendar, Loader2, Trash2, Save } from "lucide-react";
+import { z } from "zod";
 
 interface CaseType {
   id: string;
@@ -28,6 +29,10 @@ interface CaseType {
   diagnostic_result: string | null;
   notes: string | null;
 }
+
+// Validation schema for notes
+const notesSchema = z.string()
+  .max(10000, "Notes must be less than 10000 characters");
 
 const CaseHistory = () => {
   const navigate = useNavigate();
@@ -98,11 +103,22 @@ const CaseHistory = () => {
   const handleSaveNotes = async () => {
     if (!selectedCase) return;
 
+    // Validate notes
+    const validation = notesSchema.safeParse(notes);
+    if (!validation.success) {
+      toast({
+        title: "Invalid Input",
+        description: validation.error.errors[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSavingNotes(true);
     try {
       const { error } = await supabase
         .from('cases')
-        .update({ notes })
+        .update({ notes: validation.data })
         .eq('id', selectedCase.id);
 
       if (error) throw error;
