@@ -25,8 +25,8 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 **Goal:** Ensure the V2 API supports all required operations securely and matches frontend expectations.
 
 ### 2.1 Authentication & Security
-- [ ] **Auth Middleware:** Implement a middleware in Flask to verify Supabase JWT tokens sent in the `Authorization` header.
-- [ ] **Multi-tenancy:** Ensure all database queries filter by `user_id` extracted from the JWT to prevent data leaks between users.
+- [x] **Auth Middleware:** Implement a middleware in Flask to verify Supabase JWT tokens sent in the `Authorization` header.
+- [x] **Multi-tenancy:** Ensure all database queries filter by `user_id` extracted from the JWT to prevent data leaks between users.
 
 ### 2.2 Endpoint Implementation
 - [ ] **PDF Retrieval:** Implement `GET /api/manuals/<manual_id>/pdf` to proxy or redirect to the file.

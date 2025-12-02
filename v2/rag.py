@@ -141,7 +141,8 @@ class SectionRetriever:
     
     def get_sections_for_vehicle(
         self, 
-        vehicle_info: VehicleInfo
+        vehicle_info: VehicleInfo,
+        user_id: str = None
     ) -> List[Tuple[SectionReference, int]]:
         """
         Query database for sections matching vehicle info
@@ -155,7 +156,8 @@ class SectionRetriever:
             self.db.Commands.GetSections,
             vehicle_info.make or '%', 
             vehicle_info.model or '%', 
-            vehicle_info.year or 0
+            vehicle_info.year or 0,
+            user_id
         )
         
         # GetSections returns: manual_id, section_name, first_page, length
@@ -215,25 +217,27 @@ class SectionRetriever:
         self,
         manual_id: int,
         first_page: int,
-        length: int
+        length: int,
+        user_id: str = None
     ) -> List[ImageReference]:
         """Get all images within a page range for a specific manual"""
         results = self.db.query(
             self.db.Commands.GetImage,
             manual_id,
             first_page, 
-            first_page + length - 1
+            first_page + length - 1,
+            user_id
         )
         
         # GetImage returns: manual_id, page, x, y, w, h
         images = []
         for row in results:
             images.append(ImageReference(
-                page=row[1],
-                x=row[2],
-                y=row[3],
-                w=row[4],
-                h=row[5]
+                page=row[2], # page is 3rd column in v2_images.*
+                x=row[3],
+                y=row[4],
+                w=row[5],
+                h=row[6]
             ))
         
         return images
@@ -258,7 +262,8 @@ class RAGSystem:
     def query(
         self,
         user_query: str,
-        max_sections: int = 3
+        max_sections: int = 3,
+        user_id: str = None
     ) -> RetrievalResult:
         """
         Main RAG pipeline: query -> retrieve -> return references
@@ -270,7 +275,7 @@ class RAGSystem:
         print(f"Vehicle: {vehicle_info.year} {vehicle_info.make} {vehicle_info.model}")
         
         # Step 2: Get relevant sections
-        sections_with_ids = self.retriever.get_sections_for_vehicle(vehicle_info)
+        sections_with_ids = self.retriever.get_sections_for_vehicle(vehicle_info, user_id)
         print(f"Found {len(sections_with_ids)} sections")
         
         # Step 3: Filter by relevance
@@ -302,18 +307,17 @@ class RAGSystem:
             images = self.retriever.get_images_for_pages(
                 manual_id,
                 section.first_page,
-                section.length
+                section.length,
+                user_id
             )
             all_images.extend(images)
-        
+            
         return RetrievalResult(
             sections=final_sections,
             images=all_images,
             extracted_text=extracted_text,
             vehicle_info=vehicle_info
-        )
-    
-    def answer_with_context(
+        )    def answer_with_context(
         self,
         user_query: str,
         retrieval_result: RetrievalResult

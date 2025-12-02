@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 import traceback
 from io import BytesIO
 from supabase import create_client, Client
+from functools import wraps
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
@@ -55,9 +56,31 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return jsonify({'error': 'Missing Authorization header'}), 401
+        
+        try:
+            token = auth_header.split(' ')[1]
+            user = supabase.auth.get_user(token)
+            if not user:
+                return jsonify({'error': 'Invalid token'}), 401
+            
+            # Attach user_id to request context
+            request.user_id = user.user.id
+            return f(*args, **kwargs)
+        except Exception as e:
+            return jsonify({'error': 'Authentication failed'}), 401
+            
+    return decorated
+
 # ========== QUERY ENDPOINTS ==========
 
 @app.route('/api/references', methods=['POST'])
+@require_auth
 def get_references():
     """
     Get all references (sections + images) for a query
@@ -102,8 +125,8 @@ def get_references():
         query = data['query']
         max_sections = data.get('max_sections', 3)
         
-        # Retrieve references
-        result = rag_system.query(query, max_sections=max_sections)
+        # Retrieve references with user_id context
+        result = rag_system.query(query, max_sections=max_sections, user_id=request.user_id)
         
         # Get manual_id from the retrieved sections
         # Query the database to find which manual these sections belong to
@@ -665,4 +688,15 @@ def extract_images_from_query():
                 }
                 for img in extracted
             ]
-       
+        
+        # Response includes both query answer and extracted images
+        response = {
+            'answer': result.extracted_text,
+            'images': extracted_images
+        }
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        print(f"Error in extract_images_from_query: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500

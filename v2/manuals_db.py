@@ -44,8 +44,8 @@ class ManualsDB(DataBase):
         }
 
         commands = {
-            self.Commands.AddManual: "INSERT INTO v2_manuals (year, make, model, uplifted, active) VALUES (?, ?, ?, ?, ?) RETURNING id",
-            self.Commands.RemoveManual: "UPDATE v2_manuals SET active = 0 WHERE id = ?",
+            self.Commands.AddManual: "INSERT INTO v2_manuals (year, make, model, uplifted, active, user_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+            self.Commands.RemoveManual: "UPDATE v2_manuals SET active = 0 WHERE id = ? AND user_id = ?",
             self.Commands.AddSection: "INSERT INTO v2_sections (manual_id, section_name, first_page, length, h_level) VALUES (?, ?, ?, ?, ?)",
             self.Commands.AddImage: "INSERT INTO v2_images (manual_id, page, x, y, w, h) VALUES (?, ?, ?, ?, ?, ?)",
             self.Commands.GetSections: """
@@ -62,9 +62,15 @@ class ManualsDB(DataBase):
                     v2_manuals.make = ? AND
                     v2_manuals.model = ? AND
                     v2_manuals.year = ? AND
-                    v2_manuals.active = 1
+                    v2_manuals.active = 1 AND
+                    v2_manuals.user_id = ?
             """,
-            self.Commands.GetImage: "SELECT * FROM v2_images WHERE manual_id = ? AND page >= ? AND page <= ?"
+            self.Commands.GetImage: """
+                SELECT v2_images.* 
+                FROM v2_images 
+                JOIN v2_manuals ON v2_images.manual_id = v2_manuals.id
+                WHERE v2_images.manual_id = ? AND v2_images.page >= ? AND v2_images.page <= ? AND v2_manuals.user_id = ?
+            """
         }
 
         super().__init__(name, tables, commands)
