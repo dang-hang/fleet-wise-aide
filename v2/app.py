@@ -18,6 +18,17 @@ import json
 from io import BytesIO
 from supabase import create_client, Client
 from functools import wraps
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
@@ -127,6 +138,7 @@ def get_references():
         max_sections = data.get('max_sections', 3)
         
         # Retrieve references with user_id context
+        logger.info(f"Querying RAG for user {request.user_id}: {query}")
         result = rag_system.query(query, max_sections=max_sections, user_id=request.user_id)
         
         # Build unified references list
@@ -175,7 +187,7 @@ def get_references():
         return jsonify(response), 200
         
     except Exception as e:
-        print(f"Error in get_references: {traceback.format_exc()}")
+        logger.error(f"Error in get_references: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -232,7 +244,7 @@ def query_manual():
         return jsonify(response), 200
         
     except Exception as e:
-        print(f"Error in query: {traceback.format_exc()}")
+        logger.error(f"Error in query: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -258,6 +270,7 @@ def answer_query():
         max_sections = data.get('max_sections', 3)
         
         # 1. Retrieve context
+        logger.info(f"Streaming answer for user {request.user_id}: {query}")
         result = rag_system.query(query, max_sections=max_sections, user_id=request.user_id)
         
         # 2. Format citations
@@ -313,7 +326,7 @@ def answer_query():
         return Response(stream_with_context(generate()), mimetype='text/event-stream')
         
     except Exception as e:
-        print(f"Error generating answer: {traceback.format_exc()}")
+        logger.error(f"Error generating answer: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 # ========== MANUAL MANAGEMENT ENDPOINTS ==========
@@ -341,6 +354,7 @@ def get_manuals():
         return jsonify(response), 200
         
     except Exception as e:
+        logger.error(f"Error getting manuals: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -385,6 +399,7 @@ def get_manual_details(manual_id):
         return jsonify(response), 200
         
     except Exception as e:
+        logger.error(f"Error getting manual details: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -397,6 +412,7 @@ def delete_manual(manual_id):
         return jsonify({'message': 'Manual deleted successfully'}), 200
         
     except Exception as e:
+        logger.error(f"Error deleting manual: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -451,6 +467,7 @@ def upload_manual():
                 )
                 
                 # Ingest using storage path
+                logger.info(f"Ingesting manual: {year} {make} {model} for user {request.user_id}")
                 manual_id = manual_ingestion.ingest_manual(
                     pdf_path=storage_path,
                     year=year,
@@ -462,7 +479,7 @@ def upload_manual():
                 )
             except Exception as e:
                 # If upload fails (e.g. already exists), try to ingest anyway if it's there
-                print(f"Upload failed or file exists: {e}")
+                logger.warning(f"Upload failed or file exists: {e}")
                 manual_id = manual_ingestion.ingest_manual(
                     pdf_path=storage_path,
                     year=year,
@@ -498,7 +515,7 @@ def upload_manual():
         }), 201
         
     except Exception as e:
-        print(f"Error uploading manual: {traceback.format_exc()}")
+        logger.error(f"Error uploading manual: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -541,7 +558,7 @@ def get_manual_pdf(manual_id):
         return jsonify({'error': 'File not found'}), 404
         
     except Exception as e:
-        print(f"Error getting PDF: {traceback.format_exc()}")
+        logger.error(f"Error getting PDF: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -625,7 +642,7 @@ def reprocess_manual(manual_id):
         return jsonify({'message': 'Manual reprocessed successfully'}), 200
         
     except Exception as e:
-        print(f"Error reprocessing manual: {traceback.format_exc()}")
+        logger.error(f"Error reprocessing manual: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 # ========== IMAGE EXTRACTION ENDPOINTS ==========
 
@@ -701,7 +718,7 @@ def extract_images():
         return jsonify(response), 200
         
     except Exception as e:
-        print(f"Error extracting images: {traceback.format_exc()}")
+        logger.error(f"Error extracting images: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -756,7 +773,7 @@ def extract_single_image(manual_id, page):
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        print(f"Error extracting single image: {traceback.format_exc()}")
+        logger.error(f"Error extracting single image: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -870,5 +887,5 @@ def extract_images_from_query():
         return jsonify(response), 200
         
     except Exception as e:
-        print(f"Error extracting images from query: {traceback.format_exc()}")
+        logger.error(f"Error extracting images from query: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500

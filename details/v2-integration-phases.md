@@ -34,8 +34,8 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 - [x] **Enhanced Upload:** Update `POST /api/manuals/upload` to accept metadata (`vehicle_type`, `vehicle_model`, `year`) and store it in the new Postgres schema.
 
 ### 2.3 Response Standardization
-- [ ] **Citation Format:** Ensure `/api/answer` returns citations in a format compatible with the frontend `CitationChip` component.
-- [ ] **Image URLs:** Ensure image references in RAG responses point to accessible public URLs or signed URLs served by the Flask app.
+- [x] **Citation Format:** Ensure `/api/answer` returns citations in a format compatible with the frontend `CitationChip` component.
+- [x] **Image URLs:** Ensure image references in RAG responses point to accessible public URLs or signed URLs served by the Flask app.
 
 ---
 
@@ -43,16 +43,16 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 **Goal:** Switch the React frontend to communicate exclusively with the V2 Python backend.
 
 ### 3.1 AI Assistant Integration
-- [ ] **Client Update:** Modify `src/pages/AIAssistant.tsx` to call the Flask `/api/answer` endpoint instead of the Supabase Edge Function.
-- [ ] **Streaming Support:** Ensure the frontend handles the streaming response format from the Flask app correctly.
+- [x] **Client Update:** Modify `src/pages/AIAssistant.tsx` to call the Flask `/api/answer` endpoint instead of the Supabase Edge Function.
+- [x] **Streaming Support:** Ensure the frontend handles the streaming response format from the Flask app correctly.
 
 ### 3.2 Manual Management
-- [ ] **Upload Flow:** Update `src/pages/Manuals.tsx` upload logic to post to the Flask API.
-- [ ] **List & Delete:** Update the manuals list to fetch from the Flask API (or directly from Supabase if sharing the DB) and route delete actions through the API to ensure vector cleanup.
+- [x] **Upload Flow:** Update `src/pages/Manuals.tsx` upload logic to post to the Flask API.
+- [x] **List & Delete:** Update the manuals list to fetch from the Flask API (or directly from Supabase if sharing the DB) and route delete actions through the API to ensure vector cleanup.
 
 ### 3.3 Document Viewing
-- [ ] **Viewer Update:** Update `src/components/DocumentViewer.tsx` and `PdfViewer.tsx` to consume the new asset URLs.
-- [ ] **Markdown Rendering:** Update `src/components/MarkdownRenderer.tsx` to correctly render the specific citation syntax returned by V2.
+- [x] **Viewer Update:** Update `src/components/DocumentViewer.tsx` and `PdfViewer.tsx` to consume the new asset URLs.
+- [x] **Markdown Rendering:** Update `src/components/MarkdownRenderer.tsx` to correctly render the specific citation syntax returned by V2.
 
 ---
 
@@ -60,13 +60,13 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 **Goal:** Migrate legacy data and decommission the old system components.
 
 ### 4.1 Data Migration
-- [ ] **ETL Script:** Write a script to read existing manuals from the legacy Supabase tables and re-ingest them through the V2 pipeline to populate the new vector store/database.
-- [ ] **Verification:** Verify that old manuals are searchable and return accurate citations in the new system.
+- [x] **ETL Script:** Write a script to read existing manuals from the legacy Supabase tables and re-ingest them through the V2 pipeline to populate the new vector store/database.
+- [x] **Verification:** Verify that old manuals are searchable and return accurate citations in the new system.
 
 ### 4.2 Decommissioning
-- [ ] **Edge Functions:** Deprecate and remove `maintenance-ai`, `search`, and `parse-manual` functions from Supabase.
-- [ ] **Legacy Tables:** Archive and drop the old `manuals`, `manual_sections`, and `manual_chunks` tables once migration is confirmed.
-- [ ] **Cleanup:** Remove unused code in `src/integrations/supabase` related to the old pipeline.
+- [x] **Edge Functions:** Deprecate and remove `maintenance-ai`, `search`, and `parse-manual` functions from Supabase.
+- [x] **Legacy Tables:** Archive and drop the old `manuals`, `manual_sections`, and `manual_chunks` tables once migration is confirmed.
+- [x] **Cleanup:** Remove unused code in `src/integrations/supabase` related to the old pipeline.
 
 ---
 
@@ -74,9 +74,9 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 **Goal:** Harden the system for production use.
 
 ### 5.1 Testing
-- [ ] **Integration Tests:** Create a test suite that uploads a PDF and asserts that a specific question returns the expected answer.
+- [x] **Integration Tests:** Create a test suite that uploads a PDF and asserts that a specific question returns the expected answer.
 - [ ] **Load Testing:** Test concurrent requests to ensure the Flask app and database connection pool handle load gracefully.
 
 ### 5.2 Observability
-- [ ] **Logging:** Implement structured logging in the Flask app (e.g., using Sentry or simple stdout logging for container capture).
-- [ ] **Documentation:** Update `README.md` with new architecture diagrams and setup instructions for the Python backend.
+- [x] **Logging:** Implement structured logging in the Flask app (e.g., using Sentry or simple stdout logging for container capture).
+- [x] **Documentation:** Update `README.md` with new architecture diagrams and setup instructions for the Python backend.

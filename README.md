@@ -1,53 +1,60 @@
-# Welcome to your Lovable project
+# Fleet Wise Aide
 
-## Project info
+An AI-powered automotive manual assistant that helps mechanics and fleet managers find information quickly using RAG (Retrieval-Augmented Generation).
 
-**URL**: https://lovable.dev/projects/0ede7204-5bee-4454-8c73-668d07763394
+## Architecture
 
-## How can I edit this code?
+The project consists of two main components:
 
-There are several ways of editing your application.
+1.  **Frontend**: A React application (Vite) hosted on Supabase/Netlify.
+2.  **Backend**: A Python Flask API handling RAG operations, PDF processing, and manual management.
 
-**Use Lovable**
+### Backend (V2)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/0ede7204-5bee-4454-8c73-668d07763394) and start prompting.
+The backend is located in the `v2/` directory and provides the following features:
+-   **RAG System**: Uses OpenAI and PyMuPDF to index and retrieve manual sections.
+-   **Multi-tenancy**: Securely isolates manuals per user using Supabase Auth.
+-   **Streaming Chat**: Provides real-time AI responses with citations.
+-   **PDF Processing**: Automatically extracts text, hierarchy, and images from uploaded manuals.
 
-Changes made via Lovable will be committed automatically to this repo.
+## Setup
 
-**Use your preferred IDE**
+### Prerequisites
+-   Node.js & npm
+-   Python 3.10+
+-   Supabase project
+-   OpenAI API Key
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+### Frontend Setup
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Backend Setup
+```sh
+cd v2
+pip install -r requirements.txt
+python3 -m flask run --port 5000
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Environment Variables
+Create a `.env` file in `v2/` with:
+```dotenv
+OPENAI_API_KEY=sk-...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+STORAGE_PATH=manuals
+FLASK_ENV=production
+```
 
-**Use GitHub Codespaces**
+## Deployment
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
+-   **Frontend**: Deploy to Netlify, Vercel, or Supabase Hosting.
+-   **Backend**: Deploy `v2/` to Railway, Fly.io, or any container platform using the provided `Dockerfile`.
+
+## License
+MIT
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
 ## What technologies are used for this project?
