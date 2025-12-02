@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response, stream_with_context
 from flask_cors import CORS
 try:
     from manuals_db import ManualsDB
@@ -14,6 +14,7 @@ except ModuleNotFoundError:
 import os
 from werkzeug.utils import secure_filename
 import traceback
+import json
 from io import BytesIO
 from supabase import create_client, Client
 from functools import wraps
@@ -128,20 +129,6 @@ def get_references():
         # Retrieve references with user_id context
         result = rag_system.query(query, max_sections=max_sections, user_id=request.user_id)
         
-        # Get manual_id from the retrieved sections
-        # Query the database to find which manual these sections belong to
-        manual_id = None
-        if result.sections:
-            # Get manual_id from first section's vehicle info
-            db.cursor.execute("""
-                SELECT manual_id FROM Manuals 
-                WHERE make = ? AND model = ? AND year = ? AND active = 1
-                LIMIT 1
-            """, (result.vehicle_info.make, result.vehicle_info.model, result.vehicle_info.year))
-            manual_result = db.cursor.fetchone()
-            if manual_result:
-                manual_id = manual_result[0]
-        
         # Build unified references list
         references = []
         
@@ -149,7 +136,7 @@ def get_references():
         for section in result.sections:
             references.append({
                 "type": "section",
-                "manual_id": manual_id,
+                "manual_id": section.manual_id,
                 "section_name": section.section_name,
                 "first_page": section.first_page,
                 "last_page": section.first_page + section.length - 1,
@@ -157,17 +144,17 @@ def get_references():
                 "relevance_score": section.relevance_score
             })
         
-        # Add image references with URLs
+        # Add image references
         for img in result.images:
             references.append({
                 "type": "image",
-                "manual_id": manual_id,
+                "manual_id": img.manual_id,
                 "page": img.page,
                 "x": img.x,
                 "y": img.y,
                 "w": img.w,
                 "h": img.h,
-                "image_url": f"/api/images/extract/{manual_id}/{img.page}?x={img.x}&y={img.y}&w={img.w}&h={img.h}"
+                "image_url": f"/api/images/extract/{img.manual_id}/{img.page}?x={img.x}&y={img.y}&w={img.w}&h={img.h}"
             })
         
         response = {
@@ -249,63 +236,94 @@ def query_manual():
         return jsonify({'error': str(e)}), 500
 
 
+
+
+
 @app.route('/api/answer', methods=['POST'])
-def get_answer():
+@require_auth
+def answer_query():
     """
-    Get answer with context
+    Stream answer for a query with citations
     Body: {
         "query": "How do I change the oil?",
-        "max_sections": 3  (optional)
+        "max_sections": 3
     }
     """
     try:
         data = request.get_json()
-        
         if not data or 'query' not in data:
             return jsonify({'error': 'Query is required'}), 400
-        
+            
         query = data['query']
         max_sections = data.get('max_sections', 3)
         
-        # Retrieve references
-        result = rag_system.query(query, max_sections=max_sections)
+        # 1. Retrieve context
+        result = rag_system.query(query, max_sections=max_sections, user_id=request.user_id)
         
-        # Generate answer
-        answer = rag_system.answer_with_context(query, result)
+        # 2. Format citations
+        citations = {}
         
-        # Format response
-        response = {
-            'answer': answer,
-            'vehicle_info': {
-                'year': result.vehicle_info.year,
-                'make': result.vehicle_info.make,
-                'model': result.vehicle_info.model
-            },
-            'references': [
-                {
-                    'section_name': section.section_name,
-                    'first_page': section.first_page,
-                    'length': section.length
-                }
-                for section in result.sections
-            ],
-            'images_count': len(result.images)
-        }
-        
-        return jsonify(response), 200
+        # Add sections as citations
+        for i, section in enumerate(result.sections):
+            label = f"[{i+1}]"
+            citations[label] = {
+                "manualId": str(section.manual_id),
+                "page": section.first_page,
+                "manualTitle": section.section_name,
+                "snippet": f"Section: {section.section_name}"
+            }
+            
+        # Add images as citations (figures)
+        for i, img in enumerate(result.images):
+            label = f"[Fig {i+1}]"
+            citations[label] = {
+                "manualId": str(img.manual_id),
+                "page": img.page,
+                "bbox": {
+                    "x1": img.x,
+                    "y1": img.y,
+                    "x2": img.x + img.w,
+                    "y2": img.y + img.h
+                },
+                "isFigure": True,
+                "figureUrl": f"/api/images/extract/{img.manual_id}/{img.page}?x={img.x}&y={img.y}&w={img.w}&h={img.h}"
+            }
+
+        # 3. Stream response
+        def generate():
+            # Send citations first
+            yield f"data: {json.dumps({'citations': citations})}\n\n"
+            
+            # Stream OpenAI response
+            stream = rag_system.answer_stream(query, result)
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    # Re-wrap in OpenAI format for frontend compatibility
+                    data = {
+                        "choices": [{
+                            "delta": {
+                                "content": chunk.choices[0].delta.content
+                            }
+                        }]
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+            
+            yield "data: [DONE]\n\n"
+
+        return Response(stream_with_context(generate()), mimetype='text/event-stream')
         
     except Exception as e:
-        print(f"Error in answer: {traceback.format_exc()}")
+        print(f"Error generating answer: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
-
 
 # ========== MANUAL MANAGEMENT ENDPOINTS ==========
 
 @app.route('/api/manuals', methods=['GET'])
-def list_manuals():
-    """Get all manuals"""
+@require_auth
+def get_manuals():
+    """Get all manuals for the authenticated user"""
     try:
-        db.cursor.execute("SELECT * FROM Manuals WHERE active = 1")
+        db.cursor.execute("SELECT id, year, make, model, file_name, created_at FROM v2_manuals WHERE user_id = %s ORDER BY created_at DESC", (request.user_id,))
         manuals = db.cursor.fetchall()
         
         response = [
@@ -314,8 +332,8 @@ def list_manuals():
                 'year': m[1],
                 'make': m[2],
                 'model': m[3],
-                'uplifted': bool(m[4]),
-                'active': bool(m[5])
+                'file_name': m[4],
+                'created_at': m[5].isoformat() if m[5] else None
             }
             for m in manuals
         ]
@@ -327,22 +345,23 @@ def list_manuals():
 
 
 @app.route('/api/manuals/<int:manual_id>', methods=['GET'])
+@require_auth
 def get_manual_details(manual_id):
     """Get details for a specific manual"""
     try:
         # Get manual info
-        db.cursor.execute("SELECT * FROM Manuals WHERE manual_id = ?", (manual_id,))
+        db.cursor.execute("SELECT id, year, make, model, file_name, created_at FROM v2_manuals WHERE id = %s AND user_id = %s", (manual_id, request.user_id))
         manual = db.cursor.fetchone()
         
         if not manual:
             return jsonify({'error': 'Manual not found'}), 404
         
         # Get sections
-        db.cursor.execute("SELECT * FROM Sections WHERE manual_id = ?", (manual_id,))
+        db.cursor.execute("SELECT section_name, first_page, length FROM v2_sections WHERE manual_id = %s ORDER BY first_page", (manual_id,))
         sections = db.cursor.fetchall()
         
         # Get images
-        db.cursor.execute("SELECT COUNT(*) FROM Images WHERE manual_id = ?", (manual_id,))
+        db.cursor.execute("SELECT COUNT(*) FROM v2_images WHERE manual_id = %s", (manual_id,))
         image_count = db.cursor.fetchone()[0]
         
         response = {
@@ -350,14 +369,13 @@ def get_manual_details(manual_id):
             'year': manual[1],
             'make': manual[2],
             'model': manual[3],
-            'uplifted': bool(manual[4]),
-            'active': bool(manual[5]),
+            'file_name': manual[4],
+            'created_at': manual[5].isoformat() if manual[5] else None,
             'sections': [
                 {
-                    'section_name': s[1],
-                    'first_page': s[2],
-                    'length': s[3],
-                    'h_level': s[4]
+                    'name': s[0],
+                    'page_start': s[1],
+                    'page_end': s[1] + s[2] - 1
                 }
                 for s in sections
             ],
@@ -371,10 +389,11 @@ def get_manual_details(manual_id):
 
 
 @app.route('/api/manuals/<int:manual_id>', methods=['DELETE'])
+@require_auth
 def delete_manual(manual_id):
     """Soft delete a manual"""
     try:
-        db.commit(db.Commands.RemoveManual, manual_id)
+        db.commit(db.Commands.RemoveManual, manual_id, request.user_id)
         return jsonify({'message': 'Manual deleted successfully'}), 200
         
     except Exception as e:
@@ -820,4 +839,36 @@ def extract_images_from_query():
                 }
                 for img in extracted
             ]
-       
+        
+        response = {
+            'query': query,
+            'vehicle_info': {
+                'year': result.vehicle_info.year,
+                'make': result.vehicle_info.make,
+                'model': result.vehicle_info.model
+            },
+            'references': [
+                {
+                    'type': "section",
+                    "manual_id": manual_id,
+                    "section_name": section.section_name,
+                    "first_page": section.first_page,
+                    "last_page": section.first_page + section.length - 1,
+                    "length": section.length,
+                    "relevance_score": section.relevance_score
+                }
+                for section in result.sections
+            ],
+            'images': extracted_images,
+            'summary': {
+                'total_references': len(result.sections) + len(result.images),
+                'sections': len(result.sections),
+                'images': len(result.images)
+            }
+        }
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        print(f"Error extracting images from query: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500

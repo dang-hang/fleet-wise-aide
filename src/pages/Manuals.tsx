@@ -11,6 +11,7 @@ import { BookOpen, Search, Upload, FileText, Download, Trash2, Eye } from "lucid
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { DocumentViewer } from "@/components/DocumentViewer";
+import { fetchWithAuth } from "@/lib/api";
 
 const uploadSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
@@ -62,21 +63,34 @@ const Manuals = () => {
 
   const fetchManuals = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("manuals")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
+    try {
+      const response = await fetchWithAuth("/api/manuals");
+      const data = await response.json();
+      
+      // Map backend response to frontend Manual interface
+      const mappedManuals: Manual[] = data.map((m: any) => ({
+        id: m.manual_id.toString(),
+        title: m.file_name || `${m.year} ${m.make} ${m.model}`,
+        vehicle_type: m.make,
+        vehicle_model: m.model,
+        year_range: m.year.toString(),
+        file_path: m.file_name, // Not used for download in new system, but kept for compatibility
+        file_type: "application/pdf",
+        file_size: 0, // Not returned by backend list
+        created_at: m.created_at
+      }));
+      
+      setManuals(mappedManuals);
+    } catch (error) {
+      console.error("Error fetching manuals:", error);
       toast({
         title: "Error",
         description: "Failed to load manuals",
         variant: "destructive",
       });
-    } else {
-      setManuals(data || []);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,38 +164,21 @@ const Manuals = () => {
     setUploading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("year", yearRange.trim()); // Backend expects int, but FormData sends string. Backend should handle or I parse.
+      formData.append("make", vehicleType.trim());
+      formData.append("model", vehicleModel.trim());
+      // formData.append("uplifted", "false"); // Optional
 
-      // Upload file to storage
-      const fileExt = selectedFile.name.split(".").pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from("manuals")
-        .upload(fileName, selectedFile);
-
-      if (uploadError) throw uploadError;
-
-      // Save metadata to database
-      const { error: dbError } = await supabase
-        .from("manuals")
-        .insert({
-          user_id: user.id,
-          title: title.trim(),
-          vehicle_type: vehicleType.trim(),
-          vehicle_model: vehicleModel.trim() || null,
-          year_range: yearRange.trim() || null,
-          file_path: fileName,
-          file_type: selectedFile.type,
-          file_size: selectedFile.size,
-        });
-
-      if (dbError) throw dbError;
+      await fetchWithAuth("/api/manuals/upload", {
+        method: "POST",
+        body: formData,
+      });
 
       toast({
         title: "Success",
-        description: "Manual uploaded successfully. Processing document...",
+        description: "Manual uploaded and processed successfully.",
       });
 
       // Reset form and refresh list
@@ -193,29 +190,6 @@ const Manuals = () => {
       setDialogOpen(false);
       fetchManuals();
 
-      // Trigger document parsing (non-blocking)
-      const { data: insertedData } = await supabase
-        .from("manuals")
-        .select("id")
-        .eq("file_path", fileName)
-        .single();
-
-      if (insertedData) {
-        // Call parse function asynchronously
-        supabase.functions
-          .invoke("parse-manual", {
-            body: { manualId: insertedData.id }
-          })
-          .then(() => {
-            toast({
-              title: "Processing Complete",
-              description: "Manual has been indexed for AI reference",
-            });
-          })
-          .catch((err) => {
-            console.error("Parse error:", err);
-          });
-      }
     } catch (error) {
       toast({
         title: "Upload failed",
@@ -229,22 +203,20 @@ const Manuals = () => {
 
   const handleDownload = async (manual: Manual) => {
     try {
-      const { data, error } = await supabase.storage
-        .from("manuals")
-        .download(manual.file_path);
-
-      if (error) throw error;
+      const response = await fetchWithAuth(`/api/manuals/${manual.id}/pdf`);
+      const blob = await response.blob();
 
       // Create download link
-      const url = URL.createObjectURL(data);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = manual.title;
+      a.download = manual.title + ".pdf"; // Ensure extension
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
+      console.error("Download error:", error);
       toast({
         title: "Download failed",
         description: "Failed to download manual",
@@ -260,34 +232,9 @@ const Manuals = () => {
         description: "Re-processing manual with new RAG system (sections + diagrams)...",
       });
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        throw new Error("You must be signed in to re-process manuals");
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-manual`, {
+      await fetchWithAuth(`/api/manuals/${manualId}/reprocess`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-        body: JSON.stringify({ manualId }),
       });
-
-      if (!response.ok) {
-        let errorMessage = "Failed to re-process manual";
-        try {
-          const errorBody = await response.json();
-          if (errorBody?.error) {
-            errorMessage = errorBody.error;
-          }
-        } catch (_) {
-          // Ignore JSON parsing failures so we can fall back to the default message.
-        }
-        throw new Error(errorMessage);
-      }
 
       toast({
         title: "Success",
@@ -309,23 +256,9 @@ const Manuals = () => {
     if (!confirm("Are you sure you want to delete this manual?")) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      // Delete file from storage
-      const { error: storageError } = await supabase.storage
-        .from("manuals")
-        .remove([manual.file_path]);
-
-      if (storageError) throw storageError;
-
-      // Delete from database
-      const { error: dbError } = await supabase
-        .from("manuals")
-        .delete()
-        .eq("id", manual.id);
-
-      if (dbError) throw dbError;
+      await fetchWithAuth(`/api/manuals/${manual.id}`, {
+        method: "DELETE",
+      });
 
       toast({
         title: "Success",

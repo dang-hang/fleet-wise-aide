@@ -22,6 +22,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
+import { fetchWithAuth } from "@/lib/api";
 
 interface Citation {
   label: string;
@@ -156,22 +157,12 @@ const AIAssistant = () => {
       }
       const initialMessages = [{ role: 'user' as const, content: initialPrompt }];
       
-      // Get user's session token for authentication
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-      
       // Get diagnostic from AI with proper authentication
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maintenance-ai`, {
+      const response = await fetchWithAuth("/api/answer", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
         body: JSON.stringify({ 
-          messages: initialMessages
+          query: initialPrompt,
+          max_sections: 5
         }),
       });
 
@@ -326,21 +317,11 @@ const AIAssistant = () => {
     setIsLoading(true);
 
     try {
-      // Get user's session token for authentication
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/maintenance-ai`, {
+      const response = await fetchWithAuth("/api/answer", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
         body: JSON.stringify({ 
-          messages: updatedMessages
+          query: validation.data, // Send only the current message as query
+          max_sections: 3
         }),
       });
 

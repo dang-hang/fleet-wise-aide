@@ -12,6 +12,7 @@ class VehicleInfo:
 
 @dataclass
 class SectionReference:
+    manual_id: int
     section_name: str
     first_page: int
     length: int
@@ -19,6 +20,7 @@ class SectionReference:
 
 @dataclass
 class ImageReference:
+    manual_id: int
     page: int
     x: int
     y: int
@@ -143,10 +145,10 @@ class SectionRetriever:
         self, 
         vehicle_info: VehicleInfo,
         user_id: str = None
-    ) -> List[Tuple[SectionReference, int]]:
+    ) -> List[SectionReference]:
         """
         Query database for sections matching vehicle info
-        Returns list of (SectionReference, manual_id) tuples
+        Returns list of SectionReference
         """
         if not any([vehicle_info.year, vehicle_info.make, vehicle_info.model]):
             return []
@@ -163,34 +165,34 @@ class SectionRetriever:
         # GetSections returns: manual_id, section_name, first_page, length
         sections = []
         for row in results:
-            sections.append((
+            sections.append(
                 SectionReference(
+                    manual_id=row[0],
                     section_name=row[1],
                     first_page=row[2],
                     length=row[3]
-                ),
-                row[0]  # manual_id
-            ))
+                )
+            )
         
         return sections
     
     def filter_sections_by_relevance(
         self,
-        sections: List[Tuple[SectionReference, int]],
+        sections: List[SectionReference],
         topics: List[str]
-    ) -> List[Tuple[SectionReference, int]]:
+    ) -> List[SectionReference]:
         """Filter sections by keyword matching"""
         if not topics:
             return sections
         
         filtered = []
-        for section, manual_id in sections:
+        for section in sections:
             section_lower = section.section_name.lower()
             # Check if any topic appears in section name
             for topic in topics:
                 if topic.lower() in section_lower:
                     section.relevance_score = 1.0
-                    filtered.append((section, manual_id))
+                    filtered.append(section)
                     break
         
         # If no matches, return all sections (fallback)
@@ -233,6 +235,7 @@ class SectionRetriever:
         images = []
         for row in results:
             images.append(ImageReference(
+                manual_id=manual_id,
                 page=row[2], # page is 3rd column in v2_images.*
                 x=row[3],
                 y=row[4],
@@ -291,9 +294,9 @@ class RAGSystem:
         all_images = []
         final_sections = []
         
-        for section, manual_id in filtered_sections:
+        for section in filtered_sections:
             # Get PDF path using manual_id
-            pdf_path = self.retriever.get_pdf_path(manual_id)
+            pdf_path = self.retriever.get_pdf_path(section.manual_id)
             
             text = self.retriever.extract_text_from_section(
                 pdf_path,
@@ -305,7 +308,7 @@ class RAGSystem:
             
             # Get images for this section
             images = self.retriever.get_images_for_pages(
-                manual_id,
+                section.manual_id,
                 section.first_page,
                 section.length,
                 user_id
@@ -317,7 +320,45 @@ class RAGSystem:
             images=all_images,
             extracted_text=extracted_text,
             vehicle_info=vehicle_info
-        )    def answer_with_context(
+        )
+
+    def answer_stream(
+        self,
+        user_query: str,
+        retrieval_result: RetrievalResult
+    ):
+        """Generate answer using retrieved context (streaming)"""
+        stream = self.client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"""You are an automotive manual assistant. Answer questions using ONLY the provided manual excerpts.
+
+Vehicle: {retrieval_result.vehicle_info.year} {retrieval_result.vehicle_info.make} {retrieval_result.vehicle_info.model}
+
+Manual Sections Retrieved:
+{retrieval_result.extracted_text}
+
+Rules:
+- Only use information from the manual excerpts above
+- Cite section names when referencing information
+- If the manual doesn't contain the answer, say so
+- Be concise and practical
+"""
+                },
+                {
+                    "role": "user",
+                    "content": user_query
+                }
+            ],
+            max_tokens=1000,
+            stream=True
+        )
+        
+        return stream
+
+    def answer_with_context(
         self,
         user_query: str,
         retrieval_result: RetrievalResult
