@@ -3,12 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  // TEMPORARY: Bypass auth check
+  // const { data: { session } } = await supabase.auth.getSession();
+  // const token = session?.access_token;
+  const token = "dummy-token";
 
-  if (!token) {
-    throw new Error("No authenticated session");
-  }
+  // if (!token) {
+  //   throw new Error("No authenticated session");
+  // }
 
   const headers = {
     "Authorization": `Bearer ${token}`,

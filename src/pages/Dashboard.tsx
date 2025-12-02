@@ -9,9 +9,12 @@ import { Wrench, BookOpen, Bot, History, AlertCircle, CheckCircle, Clock } from 
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
+// ...existing code...
 const Dashboard = () => {
   const navigate = useNavigate();
 
+  // TEMPORARY: Bypass auth check in Dashboard
+  /*
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -29,8 +32,10 @@ const Dashboard = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+  */
 
   const { data: vehiclesCount } = useQuery({
+// ...existing code...
     queryKey: ["vehicles-count"],
     queryFn: async () => {
       const { count, error } = await supabase

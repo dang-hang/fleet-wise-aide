@@ -75,6 +75,7 @@ const AIAssistant = () => {
   
   const makes = ["Ford", "Chevrolet", "Dodge", "Toyota", "Honda", "Nissan", "GMC", "Ram"];
   
+// ...existing code...
   const models: Record<string, string[]> = {
     Ford: ["Crown Victoria", "F-150", "Explorer", "Expedition", "Taurus"],
     Chevrolet: ["Tahoe", "Silverado", "Impala", "Suburban", "Malibu"],
@@ -86,6 +87,8 @@ const AIAssistant = () => {
     Ram: ["1500", "2500", "3500", "ProMaster"]
   };
 
+  // TEMPORARY: Bypass auth check
+  /*
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -95,6 +98,7 @@ const AIAssistant = () => {
     };
     checkAuth();
   }, [navigate]);
+  */
 
   const { data: savedVehicles } = useQuery({
     queryKey: ["vehicles"],
