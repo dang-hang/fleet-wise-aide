@@ -22,7 +22,9 @@ class ManualsDB(DataBase):
                 make TEXT,
                 model TEXT,
                 uplifted INTEGER,
-                active INTEGER
+                active INTEGER,
+                file_path TEXT,
+                file_name TEXT
             """,
             "v2_sections": """
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +46,7 @@ class ManualsDB(DataBase):
         }
 
         commands = {
-            self.Commands.AddManual: "INSERT INTO v2_manuals (year, make, model, uplifted, active, user_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+            self.Commands.AddManual: "INSERT INTO v2_manuals (year, make, model, uplifted, active, user_id, file_path, file_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             self.Commands.RemoveManual: "UPDATE v2_manuals SET active = 0 WHERE id = ? AND user_id = ?",
             self.Commands.AddSection: "INSERT INTO v2_sections (manual_id, section_name, first_page, length, h_level) VALUES (?, ?, ?, ?, ?)",
             self.Commands.AddImage: "INSERT INTO v2_images (manual_id, page, x, y, w, h) VALUES (?, ?, ?, ?, ?, ?)",

@@ -382,6 +382,7 @@ def delete_manual(manual_id):
 
 
 @app.route('/api/manuals/upload', methods=['POST'])
+@require_auth
 def upload_manual():
     """
     Upload and ingest a new manual
@@ -436,7 +437,9 @@ def upload_manual():
                     year=year,
                     make=make,
                     model=model,
-                    uplifted=uplifted
+                    uplifted=uplifted,
+                    user_id=request.user_id,
+                    file_name=filename
                 )
             except Exception as e:
                 # If upload fails (e.g. already exists), try to ingest anyway if it's there
@@ -446,7 +449,9 @@ def upload_manual():
                     year=year,
                     make=make,
                     model=model,
-                    uplifted=uplifted
+                    uplifted=uplifted,
+                    user_id=request.user_id,
+                    file_name=filename
                 )
         else:
             # Fallback to local storage
@@ -459,7 +464,9 @@ def upload_manual():
                 year=year,
                 make=make,
                 model=model,
-                uplifted=uplifted
+                uplifted=uplifted,
+                user_id=request.user_id,
+                file_name=filename
             )
             
             # Move to manuals folder with proper naming
@@ -472,10 +479,135 @@ def upload_manual():
         }), 201
         
     except Exception as e:
-        print(f"Error in upload: {traceback.format_exc()}")
+        print(f"Error uploading manual: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/manuals/<int:manual_id>/pdf', methods=['GET'])
+@require_auth
+def get_manual_pdf(manual_id):
+    """Get the PDF file for a manual"""
+    try:
+        # Get manual info
+        db.cursor.execute("SELECT file_path, file_name FROM v2_manuals WHERE id = ? AND user_id = ?", (manual_id, request.user_id))
+        result = db.cursor.fetchone()
+        
+        if not result:
+            return jsonify({'error': 'Manual not found'}), 404
+            
+        file_path, file_name = result
+        
+        # If it's a storage path (not absolute and not starting with ./), generate signed URL
+        if file_path and not os.path.isabs(file_path) and not file_path.startswith('./'):
+            if supabase:
+                # Generate signed URL valid for 1 hour
+                signed_url = supabase.storage.from_('manuals').create_signed_url(file_path, 3600)
+                return jsonify({'url': signed_url['signedURL']}), 200
+            else:
+                return jsonify({'error': 'Storage not configured'}), 500
+        
+        # Fallback to local file serving
+        local_path = file_path
+        if not local_path:
+             local_path = os.path.join(app.config['MANUALS_FOLDER'], f'{manual_id}.pdf')
+             
+        if os.path.exists(local_path):
+            return send_file(
+                local_path,
+                mimetype='application/pdf',
+                as_attachment=False,
+                download_name=file_name or f'manual_{manual_id}.pdf'
+            )
+            
+        return jsonify({'error': 'File not found'}), 404
+        
+    except Exception as e:
+        print(f"Error getting PDF: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/manuals/<int:manual_id>/reprocess', methods=['POST'])
+@require_auth
+def reprocess_manual(manual_id):
+    """Reprocess an existing manual"""
+    try:
+        # Get manual info
+        db.cursor.execute("SELECT * FROM v2_manuals WHERE id = ? AND user_id = ?", (manual_id, request.user_id))
+        manual = db.cursor.fetchone()
+        
+        if not manual:
+            return jsonify({'error': 'Manual not found'}), 404
+            
+        # manual tuple: id, year, make, model, uplifted, active, file_path, file_name
+        # Note: indices depend on schema order. 
+        # id=0, year=1, make=2, model=3, uplifted=4, active=5, file_path=6, file_name=7
+        
+        year = manual[1]
+        make = manual[2]
+        model = manual[3]
+        uplifted = bool(manual[4])
+        file_path = manual[6]
+        file_name = manual[7]
+        
+        if not file_path:
+            # Try to find local file
+            local_path = os.path.join(app.config['MANUALS_FOLDER'], f'{manual_id}.pdf')
+            if os.path.exists(local_path):
+                file_path = local_path
+            else:
+                return jsonify({'error': 'Source file not found'}), 404
+        
+        # Delete existing sections and images
+        db.commit("DELETE FROM v2_sections WHERE manual_id = ?", manual_id)
+        db.commit("DELETE FROM v2_images WHERE manual_id = ?", manual_id)
+        
+        # Re-ingest (we need to bypass the create manual step in ingest_manual, or modify it)
+        # Since ingest_manual creates a NEW manual, we should probably extract the processing logic
+        # or just update the existing manual.
+        
+        # For now, let's just re-run processing and insert sections/images manually here
+        # to avoid creating a duplicate manual entry.
+        
+        # Handle storage path download if needed
+        local_pdf_path = file_path
+        is_remote = False
+        if not os.path.exists(file_path) and not file_path.startswith('/'):
+             try:
+                local_pdf_path = manual_ingestion._download_from_storage(file_path)
+                is_remote = True
+             except Exception as e:
+                return jsonify({'error': f'Failed to download file: {str(e)}'}), 500
+
+        try:
+            # Process PDF
+            sections, images = manual_processor.process_manual(
+                local_pdf_path, year, make, model
+            )
+            
+            # Insert sections
+            for section in sections:
+                db.commit(
+                    db.Commands.AddSection,
+                    manual_id, section.section_name, section.first_page, 
+                    section.length, section.h_level
+                )
+            
+            # Insert images
+            for img in images:
+                db.commit(
+                    db.Commands.AddImage,
+                    manual_id, img.page, img.x, img.y, img.w, img.h
+                )
+                
+        finally:
+            if is_remote and os.path.exists(local_pdf_path):
+                os.remove(local_pdf_path)
+                
+        return jsonify({'message': 'Manual reprocessed successfully'}), 200
+        
+    except Exception as e:
+        print(f"Error reprocessing manual: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
 # ========== IMAGE EXTRACTION ENDPOINTS ==========
 
 @app.route('/api/images/extract', methods=['POST'])
@@ -688,15 +820,4 @@ def extract_images_from_query():
                 }
                 for img in extracted
             ]
-        
-        # Response includes both query answer and extracted images
-        response = {
-            'answer': result.extracted_text,
-            'images': extracted_images
-        }
-        
-        return jsonify(response), 200
-        
-    except Exception as e:
-        print(f"Error in extract_images_from_query: {traceback.format_exc()}")
-        return jsonify({'error': str(e)}), 500
+       

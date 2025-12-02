@@ -242,7 +242,8 @@ class ManualIngestion:
         make: str, 
         model: str,
         uplifted: bool = False,
-        user_id: str = None
+        user_id: str = None,
+        file_name: str = None
     ) -> int:
         """
         Ingest a manual into the database
@@ -265,14 +266,14 @@ class ManualIngestion:
                 print(f"Failed to download from storage: {e}")
                 # Fallback or re-raise? For now let it fail if file not found
         
+        # Determine file name if not provided
+        if not file_name:
+            file_name = os.path.basename(pdf_path)
+
         # Add manual record using execute_returning to get the ID
-        # Note: We should probably store the storage path in the DB if it's remote
-        # But for now the schema doesn't have a file_path column. 
-        # We'll assume the file naming convention or add a column later.
-        
         manual_id = self.db.execute_returning(
             self.db.Commands.AddManual,
-            year, make, model, 1 if uplifted else 0, 1  # active=1
+            year, make, model, 1 if uplifted else 0, 1, user_id, pdf_path, file_name
         )
         
         print(f"Created manual with ID: {manual_id}")

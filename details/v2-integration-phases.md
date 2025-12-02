@@ -29,9 +29,9 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 - [x] **Multi-tenancy:** Ensure all database queries filter by `user_id` extracted from the JWT to prevent data leaks between users.
 
 ### 2.2 Endpoint Implementation
-- [ ] **PDF Retrieval:** Implement `GET /api/manuals/<manual_id>/pdf` to proxy or redirect to the file.
-- [ ] **Reprocessing:** Implement `POST /api/manuals/<manual_id>/reprocess` to trigger re-ingestion of an existing manual.
-- [ ] **Enhanced Upload:** Update `POST /api/manuals/upload` to accept metadata (`vehicle_type`, `vehicle_model`, `year`) and store it in the new Postgres schema.
+- [x] **PDF Retrieval:** Implement `GET /api/manuals/<manual_id>/pdf` to proxy or redirect to the file.
+- [x] **Reprocessing:** Implement `POST /api/manuals/<manual_id>/reprocess` to trigger re-ingestion of an existing manual.
+- [x] **Enhanced Upload:** Update `POST /api/manuals/upload` to accept metadata (`vehicle_type`, `vehicle_model`, `year`) and store it in the new Postgres schema.
 
 ### 2.3 Response Standardization
 - [ ] **Citation Format:** Ensure `/api/answer` returns citations in a format compatible with the frontend `CitationChip` component.
