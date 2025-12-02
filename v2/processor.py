@@ -224,14 +224,12 @@ class ManualIngestion:
         """
         print(f"Ingesting manual: {year} {make} {model}")
         
-        # Add manual record using commit()
-        self.db.commit(
+        # Add manual record using execute_returning to get the ID
+        manual_id = self.db.execute_returning(
             self.db.Commands.AddManual,
             year, make, model, 1 if uplifted else 0, 1  # active=1
         )
         
-        # Get the auto-generated manual_id
-        manual_id = self.db.cursor.lastrowid
         print(f"Created manual with ID: {manual_id}")
         
         # Process PDF

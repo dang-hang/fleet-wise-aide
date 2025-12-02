@@ -11,9 +11,9 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 - [x] **Service Deployment:** Deploy the Flask container to a hosting provider (e.g., Railway, Fly.io, or AWS) accessible by the frontend.
 
 ### 1.2 Database Strategy
-- [ ] **Schema Migration:** Port the `manuals.db` (SQLite) schema to the primary Supabase Postgres database.
+- [x] **Schema Migration:** Port the `manuals.db` (SQLite) schema to the primary Supabase Postgres database.
   - Create tables for `v2_manuals`, `v2_chunks`, `v2_citations` in Postgres.
-- [ ] **Database Connector:** Update `v2/database_access.py` and `v2/manuals_db.py` to use `psycopg2` or `sqlalchemy` to connect to Supabase Postgres instead of local SQLite.
+- [x] **Database Connector:** Update `v2/database_access.py` and `v2/manuals_db.py` to use `psycopg2` or `sqlalchemy` to connect to Supabase Postgres instead of local SQLite.
 
 ### 1.3 Storage Alignment
 - [ ] **Storage Decision:** Finalize decision to use Supabase Storage as the source of truth for PDFs.

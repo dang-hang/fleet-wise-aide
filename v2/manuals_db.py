@@ -16,22 +16,24 @@ class ManualsDB(DataBase):
 
     def __init__(self, name: str):
         tables = {
-            "Manuals": """
-                manual_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            "v2_manuals": """
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 year INTEGER,
                 make TEXT,
                 model TEXT,
                 uplifted INTEGER,
                 active INTEGER
             """,
-            "Sections": """
+            "v2_sections": """
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 manual_id INTEGER,
                 section_name TEXT,
                 first_page INTEGER,
                 length INTEGER,
                 h_level INTEGER
             """,
-            "Images": """
+            "v2_images": """
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 manual_id INTEGER,
                 page INTEGER,
                 x INTEGER,
@@ -42,27 +44,27 @@ class ManualsDB(DataBase):
         }
 
         commands = {
-            self.Commands.AddManual: "INSERT INTO Manuals (year, make, model, uplifted, active) VALUES (?, ?, ?, ?, ?)",
-            self.Commands.RemoveManual: "UPDATE Manuals SET active = 0 WHERE manual_id = ?",
-            self.Commands.AddSection: "INSERT INTO Sections VALUES (?, ?, ?, ?, ?)",
-            self.Commands.AddImage: "INSERT INTO Images VALUES (?, ?, ?, ?, ?, ?)",
+            self.Commands.AddManual: "INSERT INTO v2_manuals (year, make, model, uplifted, active) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            self.Commands.RemoveManual: "UPDATE v2_manuals SET active = 0 WHERE id = ?",
+            self.Commands.AddSection: "INSERT INTO v2_sections (manual_id, section_name, first_page, length, h_level) VALUES (?, ?, ?, ?, ?)",
+            self.Commands.AddImage: "INSERT INTO v2_images (manual_id, page, x, y, w, h) VALUES (?, ?, ?, ?, ?, ?)",
             self.Commands.GetSections: """
                 SELECT 
-                    Manuals.manual_id,
-                    Sections.section_name, 
-                    Sections.first_page, 
-                    Sections.length
+                    v2_manuals.id,
+                    v2_sections.section_name, 
+                    v2_sections.first_page, 
+                    v2_sections.length
                 FROM
-                    Sections
+                    v2_sections
                 INNER JOIN
-                    Manuals ON Sections.manual_id = Manuals.manual_id
+                    v2_manuals ON v2_sections.manual_id = v2_manuals.id
                 WHERE
-                    Manuals.make = ? AND
-                    Manuals.model = ? AND
-                    Manuals.year = ? AND
-                    Manuals.active = 1
+                    v2_manuals.make = ? AND
+                    v2_manuals.model = ? AND
+                    v2_manuals.year = ? AND
+                    v2_manuals.active = 1
             """,
-            self.Commands.GetImage: "SELECT * FROM Images WHERE manual_id = ? AND page >= ? AND page <= ?"
+            self.Commands.GetImage: "SELECT * FROM v2_images WHERE manual_id = ? AND page >= ? AND page <= ?"
         }
 
         super().__init__(name, tables, commands)
