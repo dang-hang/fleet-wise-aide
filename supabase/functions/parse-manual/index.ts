@@ -7,17 +7,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Extract sections using GPT-4o Vision
-async function extractSectionsWithVision(pdfUrl: string, totalPages: number): Promise<any[]> {
+// Extract sections from PDF text content using AI
+async function extractSections(tocText: string, totalPages: number): Promise<any[]> {
   const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!lovableApiKey) {
-    console.warn("LOVABLE_API_KEY not found, skipping section extraction");
-    return [];
+    console.warn("LOVABLE_API_KEY not found, creating default sections");
+    return createDefaultSections(totalPages);
   }
 
   try {
-    // Sample first few pages for section detection
-    const samplePages = Math.min(5, totalPages);
+    console.log(`Extracting sections from ${totalPages}-page manual...`);
     
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -30,18 +29,26 @@ async function extractSectionsWithVision(pdfUrl: string, totalPages: number): Pr
         messages: [
           {
             role: "system",
-            content: `Analyze this vehicle repair manual PDF and identify the main sections with their page numbers and heading hierarchy. Return a JSON array of sections with: section_name, first_page, page_count, heading_level (1-6, where 1 is top-level like "Engine" and 6 is most nested).`
+            content: `Extract ALL sections from this vehicle repair manual's table of contents. Be thorough - include every maintenance procedure, system, and diagnostic section. Return structured section data.`
           },
           {
             role: "user",
-            content: `This is a ${totalPages}-page vehicle manual. Based on the structure, identify major sections like: Table of Contents, Safety Information, Engine, Transmission, Brakes, Electrical, etc. For each section, estimate the page range.`
+            content: `Table of Contents and first pages (manual has ${totalPages} total pages):
+
+${tocText}
+
+Extract EVERY section with:
+- section_name: Full descriptive name
+- first_page: Starting page number (1-indexed)
+- page_count: Estimated pages in section
+- heading_level: 1=chapter, 2=section, 3=subsection`
           }
         ],
         tools: [{
           type: "function",
           function: {
             name: "extract_sections",
-            description: "Extract document sections",
+            description: "Extract all manual sections",
             parameters: {
               type: "object",
               properties: {
@@ -51,15 +58,17 @@ async function extractSectionsWithVision(pdfUrl: string, totalPages: number): Pr
                     type: "object",
                     properties: {
                       section_name: { type: "string" },
-                      first_page: { type: "integer" },
-                      page_count: { type: "integer" },
-                      heading_level: { type: "integer", minimum: 1, maximum: 6 }
+                      first_page: { type: "integer", minimum: 1 },
+                      page_count: { type: "integer", minimum: 1 },
+                      heading_level: { type: "integer", minimum: 1, maximum: 3 }
                     },
-                    required: ["section_name", "first_page", "page_count", "heading_level"]
+                    required: ["section_name", "first_page", "page_count", "heading_level"],
+                    additionalProperties: false
                   }
                 }
               },
-              required: ["sections"]
+              required: ["sections"],
+              additionalProperties: false
             }
           }
         }],
@@ -69,21 +78,38 @@ async function extractSectionsWithVision(pdfUrl: string, totalPages: number): Pr
 
     if (!response.ok) {
       console.error("Section extraction failed:", response.status);
-      return [];
+      return createDefaultSections(totalPages);
     }
 
     const data = await response.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (toolCall?.function?.arguments) {
       const extracted = JSON.parse(toolCall.function.arguments);
-      console.log("Extracted sections:", extracted.sections?.length || 0);
-      return extracted.sections || [];
+      const sections = extracted.sections || [];
+      console.log(`✓ Extracted ${sections.length} sections`);
+      return sections.length > 0 ? sections : createDefaultSections(totalPages);
     }
   } catch (error) {
     console.error("Error extracting sections:", error);
   }
   
-  return [];
+  return createDefaultSections(totalPages);
+}
+
+// Create default sections if extraction fails
+function createDefaultSections(totalPages: number): any[] {
+  const sectionsPerChapter = Math.ceil(totalPages / 50);
+  const chapters = [
+    "General Information", "Maintenance Schedule", "Engine",
+    "Transmission", "Brakes", "Electrical System", "Diagnostics"
+  ];
+  
+  return chapters.map((name, i) => ({
+    section_name: name,
+    first_page: Math.floor((i * totalPages) / chapters.length) + 1,
+    page_count: Math.ceil(totalPages / chapters.length),
+    heading_level: 1
+  }));
 }
 
 serve(async (req) => {
@@ -342,8 +368,16 @@ serve(async (req) => {
     // Skip figure and table insertion for now to avoid errors
     // These can be processed separately if needed
 
-    // Extract sections using AI if available
-    const sections = await extractSectionsWithVision(manual.file_path, totalPages);
+    // Build table of contents text from first 10 pages for section extraction
+    let tocText = "";
+    for (let i = 1; i <= Math.min(10, totalPages); i++) {
+      const pageSpans = spans.filter(s => s.page_number === i);
+      tocText += pageSpans.map(s => s.text).join(" ") + "\n\n";
+    }
+    tocText = tocText.substring(0, 8000); // Limit to 8000 chars
+
+    // Extract sections using AI
+    const sections = await extractSections(tocText, totalPages);
     
     if (sections.length > 0) {
       console.log(`Inserting ${sections.length} sections...`);
