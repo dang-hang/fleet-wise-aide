@@ -16,8 +16,8 @@ This document outlines the phased approach to integrating the Python-based V2 RA
 - [x] **Database Connector:** Update `v2/database_access.py` and `v2/manuals_db.py` to use `psycopg2` or `sqlalchemy` to connect to Supabase Postgres instead of local SQLite.
 
 ### 1.3 Storage Alignment
-- [ ] **Storage Decision:** Finalize decision to use Supabase Storage as the source of truth for PDFs.
-- [ ] **Download Hooks:** Implement logic in `v2/processor.py` to fetch PDFs directly from Supabase Storage using signed URLs or service key access during ingestion.
+- [x] **Storage Decision:** Finalize decision to use Supabase Storage as the source of truth for PDFs.
+- [x] **Download Hooks:** Implement logic in `v2/processor.py` to fetch PDFs directly from Supabase Storage using signed URLs or service key access during ingestion.
 
 ---
 

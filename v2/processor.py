@@ -4,6 +4,9 @@ from openai import OpenAI
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 import json
+import os
+import requests
+from supabase import create_client, Client
 
 @dataclass
 class Section:
@@ -207,6 +210,30 @@ class ManualIngestion:
     def __init__(self, db: 'ManualsDB', processor: ManualProcessor):
         self.db = db
         self.processor = processor
+        
+        # Initialize Supabase client if env vars exist
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+        self.supabase: Client = create_client(url, key) if url and key else None
+        self.storage_bucket = "manuals"
+
+    def _download_from_storage(self, storage_path: str) -> str:
+        """Download file from Supabase storage to a temp file"""
+        if not self.supabase:
+            raise ValueError("Supabase credentials not configured")
+            
+        print(f"Downloading {storage_path} from Supabase Storage...")
+        
+        # Create temp file
+        temp_filename = f"temp_{os.path.basename(storage_path)}"
+        if not temp_filename.endswith('.pdf'):
+            temp_filename += '.pdf'
+            
+        with open(temp_filename, 'wb') as f:
+            res = self.supabase.storage.from_(self.storage_bucket).download(storage_path)
+            f.write(res)
+            
+        return temp_filename
     
     def ingest_manual(
         self, 
@@ -214,17 +241,35 @@ class ManualIngestion:
         year: int, 
         make: str, 
         model: str,
-        uplifted: bool = False
+        uplifted: bool = False,
+        user_id: str = None
     ) -> int:
         """
         Ingest a manual into the database
         
-        Returns:
-            manual_id of the inserted manual
+        Args:
+            pdf_path: Local path or Supabase Storage path (e.g. "folder/file.pdf")
+            ...
         """
         print(f"Ingesting manual: {year} {make} {model}")
         
+        # Handle storage path
+        local_pdf_path = pdf_path
+        is_remote = False
+        if not os.path.exists(pdf_path) and not pdf_path.startswith('/'):
+            # Assume it's a storage path if it doesn't exist locally and isn't absolute
+            try:
+                local_pdf_path = self._download_from_storage(pdf_path)
+                is_remote = True
+            except Exception as e:
+                print(f"Failed to download from storage: {e}")
+                # Fallback or re-raise? For now let it fail if file not found
+        
         # Add manual record using execute_returning to get the ID
+        # Note: We should probably store the storage path in the DB if it's remote
+        # But for now the schema doesn't have a file_path column. 
+        # We'll assume the file naming convention or add a column later.
+        
         manual_id = self.db.execute_returning(
             self.db.Commands.AddManual,
             year, make, model, 1 if uplifted else 0, 1  # active=1
@@ -232,27 +277,33 @@ class ManualIngestion:
         
         print(f"Created manual with ID: {manual_id}")
         
-        # Process PDF
-        sections, images = self.processor.process_manual(
-            pdf_path, year, make, model
-        )
-        
-        # Insert sections
-        print(f"Inserting {len(sections)} sections...")
-        for section in sections:
-            self.db.commit(
-                self.db.Commands.AddSection,
-                manual_id, section.section_name, section.first_page, 
-                section.length, section.h_level
+        try:
+            # Process PDF
+            sections, images = self.processor.process_manual(
+                local_pdf_path, year, make, model
             )
-        
-        # Insert images
-        print(f"Inserting {len(images)} images...")
-        for img in images:
-            self.db.commit(
-                self.db.Commands.AddImage,
-                manual_id, img.page, img.x, img.y, img.w, img.h
-            )
+            
+            # Insert sections
+            print(f"Inserting {len(sections)} sections...")
+            for section in sections:
+                self.db.commit(
+                    self.db.Commands.AddSection,
+                    manual_id, section.section_name, section.first_page, 
+                    section.length, section.h_level
+                )
+            
+            # Insert images
+            print(f"Inserting {len(images)} images...")
+            for img in images:
+                self.db.commit(
+                    self.db.Commands.AddImage,
+                    manual_id, img.page, img.x, img.y, img.w, img.h
+                )
+                
+        finally:
+            # Cleanup temp file if we downloaded it
+            if is_remote and os.path.exists(local_pdf_path):
+                os.remove(local_pdf_path)
         
         print(f"Manual ingestion complete. ID: {manual_id}")
         return manual_id

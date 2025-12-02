@@ -15,6 +15,7 @@ import os
 from werkzeug.utils import secure_filename
 import traceback
 from io import BytesIO
+from supabase import create_client, Client
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
@@ -38,6 +39,11 @@ db = ManualsDB(DATABASE_NAME)
 api_key = os.getenv('OPENAI_API_KEY')
 if not api_key:
     raise RuntimeError("OPENAI_API_KEY environment variable must be set before starting the API server")
+
+# Initialize Supabase
+supabase_url = os.getenv('SUPABASE_URL')
+supabase_key = os.getenv('SUPABASE_KEY')
+supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
 rag_system = RAGSystem(db, api_key=api_key, pdf_base_path=MANUALS_FOLDER + '/')
 manual_processor = ManualProcessor(api_key=api_key)
@@ -387,21 +393,55 @@ def upload_manual():
         
         # Save file temporarily
         filename = secure_filename(file.filename)
-        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(temp_path)
         
-        # Ingest manual
-        manual_id = manual_ingestion.ingest_manual(
-            pdf_path=temp_path,
-            year=year,
-            make=make,
-            model=model,
-            uplifted=uplifted
-        )
-        
-        # Move to manuals folder with proper naming
-        final_path = os.path.join(app.config['MANUALS_FOLDER'], f'{manual_id}.pdf')
-        os.rename(temp_path, final_path)
+        # If Supabase is configured, upload there
+        if supabase:
+            file_content = file.read()
+            storage_path = f"{year}/{make}/{model}/{filename}"
+            
+            # Upload to Supabase Storage
+            try:
+                supabase.storage.from_('manuals').upload(
+                    path=storage_path,
+                    file=file_content,
+                    file_options={"content-type": "application/pdf"}
+                )
+                
+                # Ingest using storage path
+                manual_id = manual_ingestion.ingest_manual(
+                    pdf_path=storage_path,
+                    year=year,
+                    make=make,
+                    model=model,
+                    uplifted=uplifted
+                )
+            except Exception as e:
+                # If upload fails (e.g. already exists), try to ingest anyway if it's there
+                print(f"Upload failed or file exists: {e}")
+                manual_id = manual_ingestion.ingest_manual(
+                    pdf_path=storage_path,
+                    year=year,
+                    make=make,
+                    model=model,
+                    uplifted=uplifted
+                )
+        else:
+            # Fallback to local storage
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(temp_path)
+            
+            # Ingest manual
+            manual_id = manual_ingestion.ingest_manual(
+                pdf_path=temp_path,
+                year=year,
+                make=make,
+                model=model,
+                uplifted=uplifted
+            )
+            
+            # Move to manuals folder with proper naming
+            final_path = os.path.join(app.config['MANUALS_FOLDER'], f'{manual_id}.pdf')
+            os.rename(temp_path, final_path)
         
         return jsonify({
             'message': 'Manual uploaded and ingested successfully',
@@ -625,121 +665,4 @@ def extract_images_from_query():
                 }
                 for img in extracted
             ]
-        
-        # Generate answer
-        answer = rag_system.answer_with_context(query, result)
-        
-        response = {
-            'answer': answer,
-            'vehicle_info': {
-                'year': result.vehicle_info.year,
-                'make': result.vehicle_info.make,
-                'model': result.vehicle_info.model
-            },
-            'sections': [
-                {
-                    'section_name': section.section_name,
-                    'first_page': section.first_page,
-                    'length': section.length
-                }
-                for section in result.sections
-            ],
-            'images': extracted_images
-        }
-        
-        return jsonify(response), 200
-        
-    except Exception as e:
-        print(f"Error in images-from-query: {traceback.format_exc()}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ========== SEARCH ENDPOINTS ==========
-
-@app.route('/api/search/sections', methods=['POST'])
-def search_sections():
-    """
-    Search sections by vehicle info
-    Body: {
-        "year": 2023,
-        "make": "Chevrolet",
-        "model": "Tahoe"
-    }
-    """
-    try:
-        data = request.get_json()
-        
-        year = data.get('year')
-        make = data.get('make')
-        model = data.get('model')
-        
-        if not any([year, make, model]):
-            return jsonify({'error': 'At least one search parameter required'}), 400
-        
-        results = db.query(
-            db.Commands.GetSections,
-            make or '%',
-            model or '%',
-            year or 0
-        )
-        
-        response = [
-            {
-                'manual_id': r[0],
-                'section_name': r[1],
-                'first_page': r[2],
-                'length': r[3]
-            }
-            for r in results
-        ]
-        
-        return jsonify(response), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-# ========== HEALTH CHECK ==========
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'database': DATABASE_NAME,
-        'api_key_set': bool(api_key)
-    }), 200
-
-
-@app.route('/', methods=['GET'])
-def index():
-    """Root endpoint"""
-    return jsonify({
-        'message': 'RAG System API',
-        'version': '1.0',
-        'endpoints': {
-            'query': '/api/query',
-            'answer': '/api/answer',
-            'manuals': '/api/manuals',
-            'upload': '/api/manuals/upload',
-            'search': '/api/search/sections',
-            'extract_images': '/api/images/extract',
-            'extract_single': '/api/images/extract/<manual_id>/<page>',
-            'images_from_query': '/api/images/from-query',
-            'health': '/api/health'
-        }
-    }), 200
-
-
-if __name__ == '__main__':
-    # Check for API key
-    if not api_key:
-        print("\n⚠️  WARNING: OPENAI_API_KEY not set!")
-        print("Set it with: export OPENAI_API_KEY='your-key-here'\n")
-    
-    print("Starting RAG System API...")
-    print(f"Database: {DATABASE_NAME}")
-    print(f"Manuals folder: {MANUALS_FOLDER}")
-    print(f"Upload folder: {UPLOAD_FOLDER}")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+       

@@ -6,3 +6,4 @@ Pillow
 requests
 gunicorn
 psycopg2-binary
+supabase
