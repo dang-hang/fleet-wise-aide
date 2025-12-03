@@ -165,8 +165,7 @@ const AIAssistant = () => {
       const response = await fetchWithAuth("/maintenance-ai", {
         method: "POST",
         body: JSON.stringify({ 
-          query: initialPrompt,
-          max_sections: 5
+          messages: [{ role: "user", content: initialPrompt }]
         }),
       });
 
@@ -203,21 +202,29 @@ const AIAssistant = () => {
             const jsonStr = line.slice(6).trim();
             if (jsonStr === "[DONE]") break;
             
-            // Check for citations
-            if (jsonStr.includes('"citations"')) {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (parsed.citations) {
-                  accumulatedCitations = parsed.citations;
-                  continue;
-                }
-              } catch (e) {
-                // Not citations JSON
-              }
-            }
-
             try {
               const parsed = JSON.parse(jsonStr);
+              
+              // Check for citations in delta
+              const deltaCitations = parsed.choices?.[0]?.delta?.citations;
+              if (deltaCitations && Array.isArray(deltaCitations)) {
+                // Transform array to Record<string, Citation>
+                deltaCitations.forEach((cit: any) => {
+                  const key = cit.id || `c${Object.keys(accumulatedCitations).length + 1}`;
+                  accumulatedCitations[key] = {
+                    label: key,
+                    manualId: cit.manualId,
+                    page: cit.pageNumbers?.[0] || 1,
+                    bbox: cit.spans?.[0]?.bbox,
+                    snippet: cit.content?.substring(0, 150),
+                    manualTitle: cit.manualTitle,
+                    figureUrl: cit.figureUrl,
+                    isFigure: cit.isFigure,
+                  };
+                });
+                continue;
+              }
+              
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
                 fullDiagnostic += content;
@@ -321,11 +328,13 @@ const AIAssistant = () => {
     setIsLoading(true);
 
     try {
+      // Send the full conversation history for context
+      const messagesForApi = updatedMessages.map(m => ({ role: m.role, content: m.content }));
+      
       const response = await fetchWithAuth("/maintenance-ai", {
         method: "POST",
         body: JSON.stringify({ 
-          query: validation.data, // Send only the current message as query
-          max_sections: 3
+          messages: messagesForApi
         }),
       });
 
@@ -359,21 +368,29 @@ const AIAssistant = () => {
             const jsonStr = line.slice(6).trim();
             if (jsonStr === "[DONE]") break;
             
-            // Check for citations
-            if (jsonStr.includes('"citations"')) {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (parsed.citations) {
-                  accumulatedCitations = parsed.citations;
-                  continue;
-                }
-              } catch (e) {
-                // Not citations JSON
-              }
-            }
-
             try {
               const parsed = JSON.parse(jsonStr);
+              
+              // Check for citations in delta
+              const deltaCitations = parsed.choices?.[0]?.delta?.citations;
+              if (deltaCitations && Array.isArray(deltaCitations)) {
+                // Transform array to Record<string, Citation>
+                deltaCitations.forEach((cit: any) => {
+                  const key = cit.id || `c${Object.keys(accumulatedCitations).length + 1}`;
+                  accumulatedCitations[key] = {
+                    label: key,
+                    manualId: cit.manualId,
+                    page: cit.pageNumbers?.[0] || 1,
+                    bbox: cit.spans?.[0]?.bbox,
+                    snippet: cit.content?.substring(0, 150),
+                    manualTitle: cit.manualTitle,
+                    figureUrl: cit.figureUrl,
+                    isFigure: cit.isFigure,
+                  };
+                });
+                continue;
+              }
+              
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
                 assistantResponse += content;
