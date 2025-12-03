@@ -137,6 +137,15 @@ serve(async (req) => {
           ? result.spans?.map((s: any) => s.text).join(" ").substring(0, 500)
           : result.chunk?.content;
         
+        // Get first span's bbox for precise highlighting
+        const firstSpan = result.spans?.[0];
+        const spanBbox = firstSpan?.bbox ? {
+          x1: firstSpan.bbox.x1 || firstSpan.bbox[0] || 0,
+          y1: firstSpan.bbox.y1 || firstSpan.bbox[1] || 0,
+          x2: firstSpan.bbox.x2 || firstSpan.bbox[2] || 0,
+          y2: firstSpan.bbox.y2 || firstSpan.bbox[3] || 0,
+        } : undefined;
+
         // Build citation entry
         const citation = {
           id: citationId,
@@ -154,7 +163,8 @@ serve(async (req) => {
           figures: result.figures || [],
           tables: result.tables || [],
           isSection: isSection,
-          sectionName: result.section?.name
+          sectionName: result.section?.name,
+          bbox: spanBbox,
         };
         
         citations.push(citation);
