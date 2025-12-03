@@ -21,10 +21,11 @@ serve(async (req) => {
       });
     }
 
-    const { path } = await req.json();
+    const body = await req.json();
+    const { manualId, path } = body;
     
-    if (!path) {
-      throw new Error("Path is required");
+    if (!manualId && !path) {
+      throw new Error("manualId or path is required");
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -44,18 +45,45 @@ serve(async (req) => {
       });
     }
 
-    console.log("Generating signed URL for:", path);
+    let filePath = path;
 
-    // Validate that the path belongs to the authenticated user
-    // Path format: {user_id}/{filename}
-    const pathUserId = path.split('/')[0];
-    if (pathUserId !== user.id) {
-      console.error("Path does not belong to user:", user.id, "vs", pathUserId);
-      return new Response(JSON.stringify({ error: "Forbidden - you can only access your own files" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // If manualId provided, look up the file path
+    if (manualId) {
+      const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
+      const { data: manual, error: manualError } = await supabaseService
+        .from("manuals")
+        .select("file_path, user_id")
+        .eq("id", manualId)
+        .single();
+
+      if (manualError || !manual) {
+        return new Response(JSON.stringify({ error: "Manual not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Verify ownership
+      if (manual.user_id !== user.id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      filePath = manual.file_path;
+    } else {
+      // Validate that the path belongs to the authenticated user
+      const pathUserId = path.split('/')[0];
+      if (pathUserId !== user.id) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
+
+    console.log("Generating signed URL for:", filePath);
 
     // Use service client for storage operations
     const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
@@ -63,7 +91,7 @@ serve(async (req) => {
     // Generate a signed URL valid for 10 minutes (600 seconds)
     const { data, error } = await supabaseService.storage
       .from("manuals")
-      .createSignedUrl(path, 600);
+      .createSignedUrl(filePath, 600);
 
     if (error) {
       console.error("Error creating signed URL:", error);
@@ -81,7 +109,7 @@ serve(async (req) => {
         success: true,
         signedUrl: data.signedUrl,
         expiresIn: 600,
-        path
+        path: filePath
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
