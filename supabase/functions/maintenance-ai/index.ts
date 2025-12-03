@@ -183,13 +183,13 @@ serve(async (req) => {
         if (citation.figures.length > 0) {
           ragContext += `\n📊 AVAILABLE DIAGRAMS on these pages:\n`;
           citation.figures.forEach((f: any, figIdx: number) => {
-            const figLabel = `FIG_${citationId}_${figIdx}`;
-            ragContext += `- [${figLabel}] ${f.caption || `Diagram on page ${f.page_number}`}\n`;
+            const figLabel = `fig${index + 1}_${figIdx + 1}`;
+            ragContext += `- {{${figLabel}}} ${f.caption || `Diagram on page ${f.page_number}`}\n`;
             
-            // Add figure as separate citation if it has a signed URL
+            // Add figure as separate citation with consistent id format
             if (f.signed_url) {
               citations.push({
-                citationId: figLabel,
+                id: figLabel,
                 manualId: citation.manualId,
                 manualTitle: citation.manualTitle,
                 vehicleType: citation.vehicleType,
@@ -205,7 +205,7 @@ serve(async (req) => {
               });
             }
           });
-          ragContext += `INSTRUCTION: When users ask to see a diagram, reference it by its label (e.g., "[FIG_c1_0]") to display it.\n`;
+          ragContext += `INSTRUCTION: When referencing diagrams, use {{fig#_#}} markers to display them inline.\n`;
         }
         
         // Add tables if present
@@ -262,6 +262,8 @@ CRITICAL INSTRUCTIONS:
 5. If manual excerpts don't contain the answer, you MAY use your general automotive knowledge
 6. When using general knowledge (not from manuals), clearly state: "Based on general automotive knowledge:"
 7. NEVER claim general knowledge comes from the manuals - only cite what's actually in the excerpts
+8. When DIAGRAMS are available (listed with {{fig#_#}} markers), include them in your response to show relevant visuals
+9. Reference figures inline where they help illustrate a point, e.g., "See the wiring diagram {{fig1_1}} for connector locations."
 
 ${ragContext}
 

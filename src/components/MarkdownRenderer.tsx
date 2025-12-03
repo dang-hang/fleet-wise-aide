@@ -124,8 +124,8 @@ export const MarkdownRenderer = ({ content, className, citations }: MarkdownRend
     let key = 0;
 
     while (remaining) {
-      // Citation markers {{c#}}
-      const citationMatch = remaining.match(/\{\{(c\d+)\}\}/);
+      // Citation markers {{c#}} or figure markers {{fig#_#}}
+      const citationMatch = remaining.match(/\{\{(c\d+|fig\d+_\d+)\}\}/);
       if (citationMatch && citations) {
         const beforeCitation = remaining.substring(0, citationMatch.index);
         if (beforeCitation) parts.push(beforeCitation);
@@ -134,19 +134,46 @@ export const MarkdownRenderer = ({ content, className, citations }: MarkdownRend
         const citation = citations[citationKey];
         
         if (citation) {
-          parts.push(
-            <CitationChip
-              key={`citation-${key++}`}
-              label={citationKey}
-              manualId={citation.manualId}
-              page={citation.page}
-              bbox={citation.bbox}
-              manualTitle={citation.manualTitle}
-              snippet={citation.snippet}
-              figureUrl={citation.figureUrl}
-              isFigure={citation.isFigure}
-            />
-          );
+          // If it's a figure with a URL, render it inline
+          if (citation.isFigure && citation.figureUrl) {
+            parts.push(
+              <div key={`figure-${key++}`} className="my-4 rounded-lg overflow-hidden border border-border">
+                <img 
+                  src={citation.figureUrl} 
+                  alt={citation.snippet || `Figure from ${citation.manualTitle}`}
+                  className="w-full max-w-md mx-auto"
+                  loading="lazy"
+                />
+                <div className="px-3 py-2 bg-muted/50 text-xs text-muted-foreground flex items-center justify-between">
+                  <span>{citation.snippet || `Diagram from page ${citation.page}`}</span>
+                  <CitationChip
+                    label={citationKey}
+                    manualId={citation.manualId}
+                    page={citation.page}
+                    bbox={citation.bbox}
+                    manualTitle={citation.manualTitle}
+                    snippet={citation.snippet}
+                    figureUrl={citation.figureUrl}
+                    isFigure={citation.isFigure}
+                  />
+                </div>
+              </div>
+            );
+          } else {
+            parts.push(
+              <CitationChip
+                key={`citation-${key++}`}
+                label={citationKey}
+                manualId={citation.manualId}
+                page={citation.page}
+                bbox={citation.bbox}
+                manualTitle={citation.manualTitle}
+                snippet={citation.snippet}
+                figureUrl={citation.figureUrl}
+                isFigure={citation.isFigure}
+              />
+            );
+          }
         } else {
           parts.push(citationMatch[0]);
         }
