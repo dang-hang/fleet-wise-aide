@@ -211,11 +211,20 @@ const AIAssistant = () => {
                 // Transform array to Record<string, Citation>
                 deltaCitations.forEach((cit: any) => {
                   const key = cit.id || `c${Object.keys(accumulatedCitations).length + 1}`;
+                  // Get bbox - prefer direct bbox, fallback to first span's bbox
+                  const bbox = cit.bbox || cit.spans?.[0]?.bbox;
+                  const normalizedBbox = bbox ? {
+                    x1: bbox.x1 ?? bbox[0] ?? 0,
+                    y1: bbox.y1 ?? bbox[1] ?? 0,
+                    x2: bbox.x2 ?? bbox[2] ?? 0,
+                    y2: bbox.y2 ?? bbox[3] ?? 0,
+                  } : undefined;
+                  
                   accumulatedCitations[key] = {
                     label: key,
                     manualId: cit.manualId,
                     page: cit.pageNumbers?.[0] || 1,
-                    bbox: cit.spans?.[0]?.bbox,
+                    bbox: normalizedBbox,
                     snippet: cit.content?.substring(0, 150),
                     manualTitle: cit.manualTitle,
                     figureUrl: cit.figureUrl,
@@ -377,11 +386,20 @@ const AIAssistant = () => {
                 // Transform array to Record<string, Citation>
                 deltaCitations.forEach((cit: any) => {
                   const key = cit.id || `c${Object.keys(accumulatedCitations).length + 1}`;
+                  // Get bbox - prefer direct bbox, fallback to first span's bbox
+                  const bbox = cit.bbox || cit.spans?.[0]?.bbox;
+                  const normalizedBbox = bbox ? {
+                    x1: bbox.x1 ?? bbox[0] ?? 0,
+                    y1: bbox.y1 ?? bbox[1] ?? 0,
+                    x2: bbox.x2 ?? bbox[2] ?? 0,
+                    y2: bbox.y2 ?? bbox[3] ?? 0,
+                  } : undefined;
+                  
                   accumulatedCitations[key] = {
                     label: key,
                     manualId: cit.manualId,
                     page: cit.pageNumbers?.[0] || 1,
-                    bbox: cit.spans?.[0]?.bbox,
+                    bbox: normalizedBbox,
                     snippet: cit.content?.substring(0, 150),
                     manualTitle: cit.manualTitle,
                     figureUrl: cit.figureUrl,
