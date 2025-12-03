@@ -162,7 +162,7 @@ const AIAssistant = () => {
       const initialMessages = [{ role: 'user' as const, content: initialPrompt }];
       
       // Get diagnostic from AI with proper authentication
-      const response = await fetchWithAuth("/api/answer", {
+      const response = await fetchWithAuth("/maintenance-ai", {
         method: "POST",
         body: JSON.stringify({ 
           query: initialPrompt,
@@ -321,7 +321,7 @@ const AIAssistant = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetchWithAuth("/api/answer", {
+      const response = await fetchWithAuth("/maintenance-ai", {
         method: "POST",
         body: JSON.stringify({ 
           query: validation.data, // Send only the current message as query
