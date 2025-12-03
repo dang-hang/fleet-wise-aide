@@ -5,7 +5,7 @@ import { PdfViewer } from "@/components/PdfViewer";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { fetchWithAuth } from "@/lib/api";
+import { getManualPdfUrl } from "@/lib/api";
 
 export default function ManualViewer() {
   const { manualId } = useParams<{ manualId: string }>();
@@ -33,17 +33,20 @@ export default function ManualViewer() {
         setLoading(true);
         setError(null);
 
-        // Fetch manual details
-        const detailsResponse = await fetchWithAuth(`/api/manuals/${manualId}`);
-        const manual = await detailsResponse.json();
-        setManualTitle(manual.file_name || `${manual.year} ${manual.make} ${manual.model}`);
+        // Fetch manual details from Supabase
+        const { data: manual, error: manualError } = await supabase
+          .from("manuals")
+          .select("title, vehicle_year, vehicle_make, vehicle_model")
+          .eq("id", manualId)
+          .single();
 
-        // Fetch PDF blob
-        const pdfResponse = await fetchWithAuth(`/api/manuals/${manualId}/pdf`);
-        const blob = await pdfResponse.blob();
-        const url = URL.createObjectURL(blob);
+        if (manualError) throw manualError;
+        
+        setManualTitle(manual.title || `${manual.vehicle_year} ${manual.vehicle_make} ${manual.vehicle_model}`);
 
-        setSignedUrl(url);
+        // Get signed URL for PDF
+        const signedUrl = await getManualPdfUrl(manualId);
+        setSignedUrl(signedUrl);
         setLoading(false);
       } catch (err) {
         console.error("Error loading manual:", err);
