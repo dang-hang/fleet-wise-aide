@@ -11,7 +11,7 @@ import { BookOpen, Search, Upload, FileText, Download, Trash2, Eye } from "lucid
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { DocumentViewer } from "@/components/DocumentViewer";
-import { fetchWithAuth } from "@/lib/api";
+import { listManuals, uploadManual, reprocessManual, deleteManual, getManualPdfUrl } from "@/lib/api";
 
 const uploadSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
@@ -55,28 +55,26 @@ const Manuals = () => {
       if (!session) {
         navigate("/auth");
       } else {
-        fetchManuals();
+        fetchManualsData();
       }
     };
     checkAuth();
   }, [navigate]);
 
-  const fetchManuals = async () => {
+  const fetchManualsData = async () => {
     setLoading(true);
     try {
-      const response = await fetchWithAuth("/api/manuals");
-      const data = await response.json();
+      const data = await listManuals();
       
-      // Map backend response to frontend Manual interface
-      const mappedManuals: Manual[] = data.map((m: any) => ({
-        id: m.manual_id.toString(),
-        title: m.file_name || `${m.year} ${m.make} ${m.model}`,
-        vehicle_type: m.make,
-        vehicle_model: m.model,
-        year_range: m.year.toString(),
-        file_path: m.file_name, // Not used for download in new system, but kept for compatibility
-        file_type: "application/pdf",
-        file_size: 0, // Not returned by backend list
+      const mappedManuals: Manual[] = data.map((m) => ({
+        id: m.id,
+        title: m.title,
+        vehicle_type: m.vehicle_type,
+        vehicle_model: m.vehicle_model,
+        year_range: m.year_range,
+        file_path: m.file_path,
+        file_type: m.file_type,
+        file_size: m.file_size,
         created_at: m.created_at
       }));
       
@@ -164,21 +162,16 @@ const Manuals = () => {
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("year", yearRange.trim()); // Backend expects int, but FormData sends string. Backend should handle or I parse.
-      formData.append("make", vehicleType.trim());
-      formData.append("model", vehicleModel.trim());
-      // formData.append("uplifted", "false"); // Optional
-
-      await fetchWithAuth("/api/manuals/upload", {
-        method: "POST",
-        body: formData,
+      await uploadManual(selectedFile, {
+        title: title.trim(),
+        vehicleType: vehicleType.trim(),
+        vehicleModel: vehicleModel.trim() || undefined,
+        yearRange: yearRange.trim() || undefined,
       });
 
       toast({
         title: "Success",
-        description: "Manual uploaded and processed successfully.",
+        description: "Manual uploaded and processing started.",
       });
 
       // Reset form and refresh list
@@ -188,7 +181,7 @@ const Manuals = () => {
       setYearRange("");
       setSelectedFile(null);
       setDialogOpen(false);
-      fetchManuals();
+      fetchManualsData();
 
     } catch (error) {
       toast({
@@ -203,18 +196,16 @@ const Manuals = () => {
 
   const handleDownload = async (manual: Manual) => {
     try {
-      const response = await fetchWithAuth(`/api/manuals/${manual.id}/pdf`);
-      const blob = await response.blob();
-
-      // Create download link
-      const url = URL.createObjectURL(blob);
+      const url = await getManualPdfUrl(manual.id);
+      
+      // Open in new tab or trigger download
       const a = document.createElement("a");
       a.href = url;
-      a.download = manual.title + ".pdf"; // Ensure extension
+      a.download = manual.title + ".pdf";
+      a.target = "_blank";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download error:", error);
       toast({
@@ -229,19 +220,17 @@ const Manuals = () => {
     try {
       toast({
         title: "Processing",
-        description: "Re-processing manual with new RAG system (sections + diagrams)...",
+        description: "Re-processing manual with RAG system...",
       });
 
-      await fetchWithAuth(`/api/manuals/${manualId}/reprocess`, {
-        method: "POST",
-      });
+      await reprocessManual(manualId);
 
       toast({
         title: "Success",
-        description: "Manual re-processed! Now includes sections and diagrams for AI reference.",
+        description: "Manual re-processed successfully!",
       });
 
-      fetchManuals();
+      fetchManualsData();
     } catch (error: any) {
       console.error("Error re-processing manual:", error);
       toast({
@@ -256,16 +245,14 @@ const Manuals = () => {
     if (!confirm("Are you sure you want to delete this manual?")) return;
 
     try {
-      await fetchWithAuth(`/api/manuals/${manual.id}`, {
-        method: "DELETE",
-      });
+      await deleteManual(manual.id);
 
       toast({
         title: "Success",
         description: "Manual deleted successfully",
       });
 
-      fetchManuals();
+      fetchManualsData();
     } catch (error) {
       toast({
         title: "Delete failed",
