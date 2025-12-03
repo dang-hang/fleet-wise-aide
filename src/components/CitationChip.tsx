@@ -1,6 +1,11 @@
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { FileText } from "lucide-react";
+import { FileText, Image } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface CitationChipProps {
   label: string;
@@ -12,8 +17,10 @@ interface CitationChipProps {
     x2: number;
     y2: number;
   };
-  figurePath?: string;
+  manualTitle?: string;
   snippet?: string;
+  figureUrl?: string;
+  isFigure?: boolean;
 }
 
 export const CitationChip = ({
@@ -21,7 +28,10 @@ export const CitationChip = ({
   manualId,
   page,
   bbox,
+  manualTitle,
   snippet,
+  figureUrl,
+  isFigure,
 }: CitationChipProps) => {
   const navigate = useNavigate();
 
@@ -33,15 +43,30 @@ export const CitationChip = ({
     navigate(url);
   };
 
+  const displayLabel = label.replace(/^c/, '');
+  const tooltipText = manualTitle 
+    ? `${manualTitle} - Page ${page}${snippet ? `\n"${snippet}..."` : ''}`
+    : `Page ${page}`;
+
   return (
-    <Badge
-      variant="secondary"
-      className="cursor-pointer hover:bg-accent transition-colors inline-flex items-center gap-1 text-xs"
-      onClick={handleClick}
-      title={snippet}
-    >
-      <FileText className="h-3 w-3" />
-      {label}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant="secondary"
+          className="cursor-pointer hover:bg-primary/20 hover:text-primary transition-colors inline-flex items-center gap-1 text-xs mx-0.5 align-middle"
+          onClick={handleClick}
+        >
+          {isFigure ? (
+            <Image className="h-3 w-3" />
+          ) : (
+            <FileText className="h-3 w-3" />
+          )}
+          <span className="font-medium">{displayLabel}</span>
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <p className="text-xs whitespace-pre-line">{tooltipText}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 };

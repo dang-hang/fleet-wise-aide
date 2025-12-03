@@ -7,6 +7,9 @@ interface Citation {
   page: number;
   bbox?: { x1: number; y1: number; x2: number; y2: number };
   snippet?: string;
+  manualTitle?: string;
+  figureUrl?: string;
+  isFigure?: boolean;
 }
 
 interface MarkdownRendererProps {
@@ -138,7 +141,10 @@ export const MarkdownRenderer = ({ content, className, citations }: MarkdownRend
               manualId={citation.manualId}
               page={citation.page}
               bbox={citation.bbox}
+              manualTitle={citation.manualTitle}
               snippet={citation.snippet}
+              figureUrl={citation.figureUrl}
+              isFigure={citation.isFigure}
             />
           );
         } else {
