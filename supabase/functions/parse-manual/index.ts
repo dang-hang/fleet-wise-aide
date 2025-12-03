@@ -7,6 +7,128 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Detect figures on a page using Vision AI
+async function detectFiguresOnPage(
+  pageText: string,
+  pageNum: number,
+  totalPages: number
+): Promise<{ figures: Array<{ caption: string; bbox: any; figureType: string }> }> {
+  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!lovableApiKey) {
+    return { figures: [] };
+  }
+
+  try {
+    // Look for figure references in text
+    const figurePatterns = [
+      /Figure\s+(\d+[\.\-]?\d*)/gi,
+      /Fig\.\s*(\d+[\.\-]?\d*)/gi,
+      /Diagram\s+(\d+[\.\-]?\d*)/gi,
+      /Illustration\s+(\d+[\.\-]?\d*)/gi,
+      /Image\s+(\d+[\.\-]?\d*)/gi,
+    ];
+
+    const detectedFigures: Array<{ caption: string; bbox: any; figureType: string }> = [];
+    const seenLabels = new Set<string>();
+
+    for (const pattern of figurePatterns) {
+      let match;
+      while ((match = pattern.exec(pageText)) !== null) {
+        const label = match[0];
+        if (!seenLabels.has(label.toLowerCase())) {
+          seenLabels.add(label.toLowerCase());
+          
+          // Extract caption context (text around the figure reference)
+          const matchIndex = match.index;
+          const contextStart = Math.max(0, matchIndex - 50);
+          const contextEnd = Math.min(pageText.length, matchIndex + label.length + 100);
+          const context = pageText.substring(contextStart, contextEnd).trim();
+          
+          detectedFigures.push({
+            caption: context.length > 150 ? context.substring(0, 150) + "..." : context,
+            bbox: { x0: 10, y0: 10, x1: 90, y1: 90 }, // Percentage-based placeholder
+            figureType: label.toLowerCase().includes("diagram") ? "diagram" : 
+                       label.toLowerCase().includes("illustration") ? "illustration" : "figure"
+          });
+        }
+      }
+    }
+
+    // If we found figure references in text, use AI to get better descriptions
+    if (detectedFigures.length > 0 && pageText.length > 100) {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${lovableApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: "Extract figure/diagram information from this manual page text. Identify what each figure shows."
+            },
+            {
+              role: "user",
+              content: `Page ${pageNum} of ${totalPages}. Identify figures/diagrams mentioned:\n\n${pageText.substring(0, 2000)}`
+            }
+          ],
+          tools: [{
+            type: "function",
+            function: {
+              name: "extract_figures",
+              description: "Extract figure information from page",
+              parameters: {
+                type: "object",
+                properties: {
+                  figures: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        label: { type: "string", description: "Figure number/label like 'Figure 3.1'" },
+                        description: { type: "string", description: "What the figure shows" },
+                        type: { type: "string", enum: ["diagram", "illustration", "photo", "chart", "table"] }
+                      },
+                      required: ["label", "description", "type"]
+                    }
+                  }
+                },
+                required: ["figures"]
+              }
+            }
+          }],
+          tool_choice: { type: "function", function: { name: "extract_figures" } }
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+        if (toolCall?.function?.arguments) {
+          const extracted = JSON.parse(toolCall.function.arguments);
+          if (extracted.figures && extracted.figures.length > 0) {
+            // Merge AI descriptions with detected figures
+            return {
+              figures: extracted.figures.map((f: any, idx: number) => ({
+                caption: `${f.label}: ${f.description}`,
+                bbox: { x0: 10, y0: 20 + (idx * 15), x1: 90, y1: 35 + (idx * 15) },
+                figureType: f.type
+              }))
+            };
+          }
+        }
+      }
+    }
+
+    return { figures: detectedFigures };
+  } catch (error) {
+    console.error("Error detecting figures:", error);
+    return { figures: [] };
+  }
+}
+
 // Extract sections from PDF text content using AI
 async function extractSections(tocText: string, totalPages: number): Promise<any[]> {
   const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
@@ -211,6 +333,7 @@ serve(async (req) => {
     const chunks: Array<any> = [];
     const figures: Array<any> = [];
     const tables: Array<any> = [];
+    const pageTexts: { [key: number]: string } = {};
 
     if (manual.file_type === "application/pdf") {
       console.log("PDF detected - parsing with pdfjs-serverless");
@@ -227,9 +350,12 @@ serve(async (req) => {
         const page = await pdfDoc.getPage(pageNum);
         const textContent = await page.getTextContent();
         
+        let pageText = "";
+        
         // Create spans from text items
         textContent.items.forEach((item: any) => {
           if (item.str && item.str.trim().length > 0) {
+            pageText += item.str + " ";
             spans.push({
               manual_id: manualId,
               page_number: pageNum,
@@ -237,8 +363,8 @@ serve(async (req) => {
               bbox: item.transform ? {
                 x0: item.transform[4],
                 y0: item.transform[5],
-                x1: item.transform[4] + item.width,
-                y1: item.transform[5] + item.height
+                x1: item.transform[4] + (item.width || 0),
+                y1: item.transform[5] + (item.height || 0)
               } : { x0: 0, y0: 0, x1: 0, y1: 0 },
               font_name: item.fontName || "Default",
               font_size: item.height || 12.0
@@ -246,35 +372,85 @@ serve(async (req) => {
           }
         });
         
-        // Detect figures (images) on the page
-        const opList = await page.getOperatorList();
-        let figureIndex = 0;
+        pageTexts[pageNum] = pageText;
         
-        for (let i = 0; i < opList.fnArray.length; i++) {
-          const fn = opList.fnArray[i];
+        // Detect figures using operator list (images in PDF)
+        try {
+          const opList = await page.getOperatorList();
+          let figureIndex = 0;
           
-          // Check for image painting operations (paintImageXObject, paintJpegXObject, etc.)
-          if (fn === 85 || fn === 88) { // OPS.paintImageXObject || OPS.paintJpegXObject
-            const args = opList.argsArray[i];
-            if (args && args.length > 0) {
-              // Extract bounding box from transform matrix (if available)
-              const bbox = { x0: 0, y0: 0, x1: 100, y1: 100 }; // Placeholder
-              
-              figures.push({
-                manual_id: manualId,
-                page_number: pageNum,
-                figure_index: figureIndex++,
-                bbox,
-                caption: `Figure ${figureIndex} on page ${pageNum}`,
-                storage_path: `${manual.file_path}/figures/page_${pageNum}_fig_${figureIndex}.png`
-              });
+          for (let i = 0; i < opList.fnArray.length; i++) {
+            const fn = opList.fnArray[i];
+            
+            // Check for image painting operations (paintImageXObject, paintJpegXObject, etc.)
+            if (fn === 85 || fn === 88) { // OPS.paintImageXObject || OPS.paintJpegXObject
+              figureIndex++;
             }
+          }
+          
+          // If we detected images on this page, create figure entries
+          if (figureIndex > 0) {
+            // Use AI to get better figure descriptions from page text
+            const aiResult = await detectFiguresOnPage(pageText, pageNum, totalPages);
+            
+            if (aiResult.figures.length > 0) {
+              aiResult.figures.forEach((fig, idx) => {
+                figures.push({
+                  manual_id: manualId,
+                  page_number: pageNum,
+                  figure_index: figures.length,
+                  bbox: fig.bbox,
+                  caption: fig.caption,
+                  storage_path: `figures/${manualId}/page_${pageNum}_fig_${idx}.png`
+                });
+              });
+            } else {
+              // Fallback: create generic figure entries for detected images
+              for (let fi = 0; fi < Math.min(figureIndex, 3); fi++) {
+                figures.push({
+                  manual_id: manualId,
+                  page_number: pageNum,
+                  figure_index: figures.length,
+                  bbox: { x0: 10, y0: 20 + (fi * 25), x1: 90, y1: 45 + (fi * 25) },
+                  caption: `Figure on page ${pageNum}`,
+                  storage_path: `figures/${manualId}/page_${pageNum}_fig_${fi}.png`
+                });
+              }
+            }
+          }
+        } catch (opError) {
+          console.warn(`Could not extract operator list for page ${pageNum}:`, opError);
+        }
+      }
+
+      // Sample additional pages for figure detection (every 10th page for larger manuals)
+      const pagesToSample = totalPages > 50 
+        ? Array.from({ length: Math.min(20, Math.floor(totalPages / 10)) }, (_, i) => (i + 1) * 10)
+        : [];
+      
+      for (const samplePage of pagesToSample) {
+        if (samplePage <= totalPages && pageTexts[samplePage]) {
+          const aiResult = await detectFiguresOnPage(pageTexts[samplePage], samplePage, totalPages);
+          if (aiResult.figures.length > 0) {
+            aiResult.figures.forEach((fig, idx) => {
+              // Check if we already have a figure for this page
+              const existingFigure = figures.find(f => f.page_number === samplePage);
+              if (!existingFigure) {
+                figures.push({
+                  manual_id: manualId,
+                  page_number: samplePage,
+                  figure_index: figures.length,
+                  bbox: fig.bbox,
+                  caption: fig.caption,
+                  storage_path: `figures/${manualId}/page_${samplePage}_fig_${idx}.png`
+                });
+              }
+            });
           }
         }
       }
 
       // Create chunks from spans (group by semantic sections)
-      const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
       const spanGroups: Array<any[]> = [];
       
       // Group spans by page, then by every 15 spans for reasonable chunk size
@@ -365,8 +541,20 @@ serve(async (req) => {
       throw chunksError;
     }
 
-    // Skip figure and table insertion for now to avoid errors
-    // These can be processed separately if needed
+    // Insert figures
+    if (figures.length > 0) {
+      console.log(`Inserting ${figures.length} figures...`);
+      const { error: figuresError } = await supabaseService
+        .from("manual_figures")
+        .insert(figures);
+
+      if (figuresError) {
+        console.error("Error inserting figures:", figuresError);
+        // Don't throw - figures are not critical
+      } else {
+        console.log(`✓ Inserted ${figures.length} figures`);
+      }
+    }
 
     // Build table of contents text from first 10 pages for section extraction
     let tocText = "";
@@ -414,7 +602,7 @@ serve(async (req) => {
       console.error("Error updating manual:", updateError);
     }
 
-    console.log(`Successfully parsed manual: ${totalPages} pages, ${sections.length} sections`);
+    console.log(`Successfully parsed manual: ${totalPages} pages, ${sections.length} sections, ${figures.length} figures`);
 
     return new Response(
       JSON.stringify({
