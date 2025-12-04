@@ -47,15 +47,15 @@ serve(async (req) => {
         });
       }
       
-      // Enforce length limits
-      if (msg.content.length > 5000) {
-        return new Response(JSON.stringify({ error: "Message too long (max 5000 characters)" }), {
+      // Enforce length limits only on user messages (assistant messages can be long)
+      if (msg.role === "user" && msg.content.length > 10000) {
+        return new Response(JSON.stringify({ error: "Message too long (max 10000 characters)" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       
-      if (msg.content.trim().length === 0) {
+      if (msg.role === "user" && msg.content.trim().length === 0) {
         return new Response(JSON.stringify({ error: "Message cannot be empty" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
